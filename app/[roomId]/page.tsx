@@ -2,16 +2,15 @@ import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../types';
 import Link from 'next/link';
 import SupplyDisplay from './SupplyDisplay';
+import type { Metadata } from 'next';
 
-// Propsの型定義を、より厳格なインライン形式に変更
-// これにより、Next.jsのビルドシステムが求める型制約を満たします。
-type PageProps = {
-  params: { roomId: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-};
+// ★ 修正点: 共有の型定義をやめ、各関数で直接型を指定します。
+// これにより、Vercelのビルドシステムとの型競合を完全に回避します。
 
 // ページのメタデータを動的に設定
-export async function generateMetadata({ params }: Pick<PageProps, 'params'>) {
+export async function generateMetadata(
+  { params }: { params: { roomId: string } }
+): Promise<Metadata> {
     const { roomId } = params;
     return {
         title: `サプライ: ${roomId.substring(0, 8)}...`,
@@ -47,8 +46,10 @@ async function getSupply(roomId: string): Promise<Card[] | null> {
     }
 }
 
-// コンポーネントのPropsにも新しい型を適用
-export default async function RoomPage({ params }: PageProps) {
+// コンポーネントのPropsにも直接型を指定
+export default async function RoomPage(
+  { params }: { params: { roomId: string } }
+) {
   const { roomId } = params;
   const initialSupply = await getSupply(roomId);
 
