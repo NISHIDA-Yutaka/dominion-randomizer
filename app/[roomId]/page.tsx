@@ -2,16 +2,25 @@ import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../types';
 import Link from 'next/link';
 import SupplyDisplay from './SupplyDisplay';
-import type { Metadata } from 'next';
+import type { Metadata, ResolvingMetadata } from 'next';
 
-// ★ 修正点: 共有の型定義をやめ、各関数で直接型を指定します。
+// ★ 修正点: 共有の型定義をやめ、各関数で直接、かつ最も厳格な型を指定します。
 // これにより、Vercelのビルドシステムとの型競合を完全に回避します。
+
+type PageProps = {
+  params: { roomId: string };
+  searchParams: { [key: string]: string | string[] | undefined };
+};
 
 // ページのメタデータを動的に設定
 export async function generateMetadata(
-  { params }: { params: { roomId: string } }
+  { params }: PageProps,
+  parent: ResolvingMetadata
 ): Promise<Metadata> {
     const { roomId } = params;
+    // オプション: parentから解決済みの親メタデータを取得できます
+    // const previousImages = (await parent).openGraph?.images || [];
+
     return {
         title: `サプライ: ${roomId.substring(0, 8)}...`,
         description: '生成されたドミニオンのサプライです。',
@@ -46,10 +55,8 @@ async function getSupply(roomId: string): Promise<Card[] | null> {
     }
 }
 
-// コンポーネントのPropsにも直接型を指定
-export default async function RoomPage(
-  { params }: { params: { roomId: string } }
-) {
+// コンポーネントのPropsにも同じ型を適用
+export default async function RoomPage({ params }: PageProps) {
   const { roomId } = params;
   const initialSupply = await getSupply(roomId);
 
