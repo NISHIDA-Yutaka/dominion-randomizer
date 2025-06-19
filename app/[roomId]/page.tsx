@@ -3,13 +3,15 @@ import { Card } from '../../types';
 import Link from 'next/link';
 import SupplyDisplay from './SupplyDisplay';
 
-type Props = {
+// Propsの型定義を、より厳格なインライン形式に変更
+// これにより、Next.jsのビルドシステムが求める型制約を満たします。
+type PageProps = {
   params: { roomId: string };
+  searchParams: { [key: string]: string | string[] | undefined };
 };
 
 // ページのメタデータを動的に設定
-export async function generateMetadata({ params }: Props) {
-    // ★ 修正点1: paramsからroomIdを一度変数に格納する
+export async function generateMetadata({ params }: Pick<PageProps, 'params'>) {
     const { roomId } = params;
     return {
         title: `サプライ: ${roomId.substring(0, 8)}...`,
@@ -45,8 +47,8 @@ async function getSupply(roomId: string): Promise<Card[] | null> {
     }
 }
 
-export default async function RoomPage({ params }: Props) {
-  // ★ 修正点2: こちらも同様に、一度変数に格納してから関数に渡す
+// コンポーネントのPropsにも新しい型を適用
+export default async function RoomPage({ params }: PageProps) {
   const { roomId } = params;
   const initialSupply = await getSupply(roomId);
 
