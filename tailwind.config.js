@@ -1,6 +1,5 @@
-import type { Config } from "tailwindcss";
-
-const config: Config = {
+/** @type {import('tailwindcss').Config} */
+module.exports = {
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -8,7 +7,6 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      // 前回のリクエストで追加したアニメーション設定
       keyframes: {
         'fade-in-out': {
           '0%, 100%': { 
@@ -28,4 +26,3 @@ const config: Config = {
   },
   plugins: [],
 };
-export default config;
