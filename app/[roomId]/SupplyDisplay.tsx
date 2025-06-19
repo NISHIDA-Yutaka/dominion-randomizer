@@ -13,7 +13,9 @@ type Placeholder = { id: string; type: 'placeholder' };
 type DisplayItem = CardType | Placeholder;
 type SortKey = 'cost' | 'name';
 
-const isCard = (item: DisplayItem): item is CardType => (item as CardType).type !== 'placeholder';
+// ★ 修正点: 型ガードの判定方法を、より安全で確実なものに変更
+// 'cost' プロパティの存在有無で、本物のカードか空き枠かを判定します。
+const isCard = (item: DisplayItem): item is CardType => 'cost' in item;
 
 function shuffle<T>(array: T[]): T[] {
   const newArray = [...array];
@@ -51,10 +53,10 @@ export default function SupplyDisplay({ initialCards }: { initialCards: CardType
       const bName = bIsCard ? b.name : '空き枠';
 
       if (sortBy === 'cost') {
-        return aCost - bCost || aName.localeCompare(bName);
+        return aCost - bCost || aName.localeCompare(bName, 'ja');
       }
       if (sortBy === 'name') {
-        return aName.localeCompare(bName);
+        return aName.localeCompare(bName, 'ja');
       }
       return 0;
     });
