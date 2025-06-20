@@ -11,7 +11,6 @@ const CoinIcon = () => (
 
 type CardProps = {
   card: Card;
-  // ★ isSelected と onToggleSelect をオプショナル（任意）にする
   isSelected?: boolean;
   onToggleSelect?: (cardId: string) => void;
   isNew?: boolean;
@@ -21,7 +20,6 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
   return (
     <div 
         className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border-2 ${isSelected ? 'border-indigo-500' : 'border-transparent'} ${onToggleSelect ? 'cursor-pointer' : ''} ${isNew ? 'animate-fade-in-out' : ''}`}
-        // ★ onToggleSelect がある場合のみクリックイベントを設定
         onClick={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
     >
         <div className="aspect-[5/7] relative">
@@ -33,7 +31,6 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
                 className="group-hover:scale-105 transition-transform duration-300"
                 unoptimized
             />
-            {/* ★ isSelected と onToggleSelect がある場合のみチェックアイコンを表示 */}
             {onToggleSelect && isSelected && (
                 <CheckCircleIcon className="absolute top-2 right-2 h-6 w-6 text-indigo-600" />
             )}
@@ -42,7 +39,8 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
             <h3 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate" title={card.name}>
                 {card.name}
             </h3>
-            <div className="flex items-center justify-center mt-1 text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-1">{card.expansion}</p>
+            <div className="flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <CoinIcon />
                 <span className="ml-1 font-semibold text-lg">{card.cost}</span>
             </div>

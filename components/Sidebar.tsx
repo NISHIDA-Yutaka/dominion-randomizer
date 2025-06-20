@@ -75,7 +75,7 @@ export default function Sidebar({
                                 <ChevronUpIcon className={`${expansionOpen ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
                               </Disclosure.Button>
                               <Disclosure.Panel className="pt-2 pb-2">
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-5 gap-2">
                                   {cardsInExpansion.map(card => (
                                     <CardComponent key={card.id} card={card} />
                                   ))}
