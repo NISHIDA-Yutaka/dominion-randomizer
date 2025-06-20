@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -20,58 +20,94 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- ★ここから追加 ---
+  const [expansions, setExpansions] = useState<string[]>([]);
+  const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
+  const [isLoadingExpansions, setIsLoadingExpansions] = useState(true);
+
+  // ページ読み込み時に拡張セットの一覧を取得する
+  useEffect(() => {
+    const fetchExpansions = async () => {
+      setIsLoadingExpansions(true);
+      const { data, error } = await supabase.from('cards').select('expansion');
+
+      if (error) {
+        console.error('Error fetching expansions:', error);
+        setError('拡張セットの読み込みに失敗しました。');
+      } else if (data) {
+        // 重複を除いた拡張セット名のリストを作成
+        const uniqueExpansions = [...new Set(data.map(c => c.expansion))].sort();
+        setExpansions(uniqueExpansions);
+        // 初期状態では全ての拡張セットを選択状態にする
+        setSelectedExpansions(new Set(uniqueExpansions));
+      }
+      setIsLoadingExpansions(false);
+    };
+
+    fetchExpansions();
+  }, []);
+
+  // チェックボックスの状態を更新するハンドラ
+  const handleExpansionChange = (expansionName: string) => {
+    setSelectedExpansions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(expansionName)) {
+        newSet.delete(expansionName);
+      } else {
+        newSet.add(expansionName);
+      }
+      return newSet;
+    });
+  };
+  // --- ★ここまで追加 ---
+
+
   const handleGenerateSupply = async () => {
     setIsLoading(true);
     setError(null);
+
+    // --- ★ここから変更 ---
+    const selectedExpansionsArray = Array.from(selectedExpansions);
+
+    if (selectedExpansionsArray.length === 0) {
+      setError('少なくとも1つの拡張セットを選択してください。');
+      setIsLoading(false);
+      return;
+    }
+    // --- ★ここまで変更 ---
+
     try {
-      // 1. 全カードのIDを取得
-      console.log('Fetching card IDs from Supabase...');
+      // 1. "選択された拡張セット"に属するカードのIDを取得
       const { data: cardIds, error: fetchError } = await supabase
         .from('cards')
-        .select('id');
+        .select('id')
+        .in('expansion', selectedExpansionsArray); // ★ inフィルターで絞り込み
 
-      // ★★★ 修正ポイント 1: cardsテーブル取得時のエラーを詳細に表示 ★★★
-      if (fetchError) {
-        console.error('Supabase fetch error details:', fetchError);
-        throw new Error(`カードデータの取得に失敗しました: ${fetchError.message}`);
-      }
-
-      console.log(`Successfully fetched ${cardIds?.length || 0} card IDs.`);
+      if (fetchError) throw fetchError;
       if (!cardIds || cardIds.length < 10) {
-        throw new Error('カードデータが10枚未満です。Supabaseにデータを追加してください。');
+        throw new Error('選択された拡張セットのカードが10枚未満です。');
       }
 
       // 2. ランダムに10枚選ぶ
       const shuffledCards = shuffle(cardIds);
       const selectedCardIds = shuffledCards.slice(0, 10).map(c => c.id);
-      console.log('Selected card IDs:', selectedCardIds);
 
       // 3. 新しいroomを作成し、カードIDの配列を保存
-      console.log('Inserting new room into Supabase...');
       const { data: newRoom, error: insertError } = await supabase
         .from('rooms')
         .insert({ cards: selectedCardIds })
         .select('id')
         .single();
 
-      // ★★★ 修正ポイント 2: roomsテーブル挿入時のエラーを詳細に表示 ★★★
-      if (insertError) {
-        console.error('Supabase insert error details:', insertError);
-        throw new Error(`サプライの保存に失敗しました: ${insertError.message}`);
-      }
+      if (insertError) throw insertError;
+      if (!newRoom) throw new Error('サプライの作成に失敗しました。');
 
-      if (!newRoom) {
-        throw new Error('サプライの作成に失敗しました。');
-      }
-
-      console.log('Successfully created room with ID:', newRoom.id);
       // 4. 生成されたサプライのページにリダイレクト
       router.push(`/${newRoom.id}`);
 
     } catch (err: any) {
-      // ★★★ 修正ポイント 3: catchブロックで完全なエラーオブジェクトをログに出力 ★★★
-      console.error('An error occurred in handleGenerateSupply:', err);
-      setError(err.message || 'サプライの生成中に予期せぬエラーが発生しました。');
+      console.error('Error generating supply:', err);
+      setError(err.message || 'サプライの生成中にエラーが発生しました。');
       setIsLoading(false);
     }
   };
@@ -82,12 +118,38 @@ export default function HomePage() {
         ドミニオンサプライ生成
       </h1>
       <p className="text-lg md:text-xl mb-8 text-gray-600 dark:text-gray-300 max-w-2xl">
-        ボタンをクリックして、ランダムな10枚の王国カードセットを生成し、
-        友達と共有しましょう。
+        使用する拡張セットを選択して、ランダムなサプライを生成しましょう。
       </p>
+
+      {/* --- ★ここから追加 (拡張セット選択UI) --- */}
+      <div className="w-full max-w-2xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <h2 className="text-xl font-bold mb-4 text-left text-gray-900 dark:text-white">拡張セット選択</h2>
+        {isLoadingExpansions ? (
+          <div className="flex items-center justify-center text-gray-500">
+            <LoadingSpinner />
+            <span className="ml-2">読み込み中...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
+            {expansions.map(exp => (
+              <label key={exp} className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={selectedExpansions.has(exp)}
+                  onChange={() => handleExpansionChange(exp)}
+                />
+                <span className="text-gray-700 dark:text-gray-300 font-medium">{exp}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* --- ★ここまで追加 --- */}
+
       <button
         onClick={handleGenerateSupply}
-        disabled={isLoading}
+        disabled={isLoading || isLoadingExpansions}
         className="flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all duration-300 text-xl"
       >
         {isLoading ? (

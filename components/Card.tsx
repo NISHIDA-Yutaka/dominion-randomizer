@@ -1,3 +1,4 @@
+// --- FILE: components/Card.tsx (更新版) ---
 import Image from 'next/image';
 import { Card } from '../types';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
@@ -10,16 +11,18 @@ const CoinIcon = () => (
 
 type CardProps = {
   card: Card;
-  isSelected: boolean;
-  onToggleSelect: (cardId: string) => void;
+  // ★ isSelected と onToggleSelect をオプショナル（任意）にする
+  isSelected?: boolean;
+  onToggleSelect?: (cardId: string) => void;
   isNew?: boolean;
 };
 
-export default function CardComponent({ card, isSelected, onToggleSelect, isNew }: CardProps) {
+export default function CardComponent({ card, isSelected = false, onToggleSelect, isNew = false }: CardProps) {
   return (
     <div 
-        className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border-2 ${isSelected ? 'border-indigo-500' : 'border-transparent'} cursor-pointer ${isNew ? 'animate-fade-in-out' : ''}`}
-        onClick={() => onToggleSelect(card.id)}
+        className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border-2 ${isSelected ? 'border-indigo-500' : 'border-transparent'} ${onToggleSelect ? 'cursor-pointer' : ''} ${isNew ? 'animate-fade-in-out' : ''}`}
+        // ★ onToggleSelect がある場合のみクリックイベントを設定
+        onClick={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
     >
         <div className="aspect-[5/7] relative">
             <Image
@@ -30,7 +33,8 @@ export default function CardComponent({ card, isSelected, onToggleSelect, isNew 
                 className="group-hover:scale-105 transition-transform duration-300"
                 unoptimized
             />
-            {isSelected && (
+            {/* ★ isSelected と onToggleSelect がある場合のみチェックアイコンを表示 */}
+            {onToggleSelect && isSelected && (
                 <CheckCircleIcon className="absolute top-2 right-2 h-6 w-6 text-indigo-600" />
             )}
         </div>

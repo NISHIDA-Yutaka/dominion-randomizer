@@ -1,3 +1,4 @@
+// --- FILE: app/[roomId]/SupplyDisplay.tsx (サイドバーオーバーレイ版) ---
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -8,13 +9,13 @@ import PlaceholderCard from '../../components/PlaceholderCard';
 import { CopyUrlButton } from '../../components/CopyUrlButton';
 import { supabase } from '../../lib/supabaseClient';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+import Sidebar from '../../components/Sidebar';
+import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
 type Placeholder = { id: string; type: 'placeholder' };
 type DisplayItem = CardType | Placeholder;
 type SortKey = 'cost' | 'name';
 
-// ★ 修正点: 型ガードの判定方法を、より安全で確実なものに変更
-// 'cost' プロパティの存在有無で、本物のカードか空き枠かを判定します。
 const isCard = (item: DisplayItem): item is CardType => 'cost' in item;
 
 function shuffle<T>(array: T[]): T[] {
@@ -34,11 +35,41 @@ export default function SupplyDisplay({ initialCards }: { initialCards: CardType
   const [error, setError] = useState<string | null>(null);
   const [newlyAddedCardIds, setNewlyAddedCardIds] = useState<Set<string>>(new Set());
 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [allExpansions, setAllExpansions] = useState<string[]>([]);
+  const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
+  const [allCards, setAllCards] = useState<CardType[]>([]);
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      const { data: expansionData } = await supabase.from('cards').select('expansion');
+      if (expansionData) {
+        const uniqueExpansions = [...new Set(expansionData.map(c => c.expansion))].sort();
+        setAllExpansions(uniqueExpansions);
+        const currentExps = new Set(initialCards.map(c => c.expansion));
+        setSelectedExpansions(currentExps);
+      }
+      
+      const { data: allCardsData } = await supabase.from('cards').select('*').order('cost').order('name');
+      if (allCardsData) {
+        setAllCards(allCardsData);
+      }
+    };
+    fetchInitialData();
+  }, [initialCards]);
+
+  const handleExpansionChange = (expansionName: string) => {
+    setSelectedExpansions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(expansionName)) newSet.delete(expansionName);
+      else newSet.add(expansionName);
+      return newSet;
+    });
+  };
+  
   useEffect(() => {
     if (newlyAddedCardIds.size > 0) {
-      const timer = setTimeout(() => {
-        setNewlyAddedCardIds(new Set());
-      }, 2500);
+      const timer = setTimeout(() => setNewlyAddedCardIds(new Set()), 2500);
       return () => clearTimeout(timer);
     }
   }, [newlyAddedCardIds]);
@@ -51,13 +82,8 @@ export default function SupplyDisplay({ initialCards }: { initialCards: CardType
       const bCost = bIsCard ? b.cost : -1;
       const aName = aIsCard ? a.name : '空き枠';
       const bName = bIsCard ? b.name : '空き枠';
-
-      if (sortBy === 'cost') {
-        return aCost - bCost || aName.localeCompare(bName, 'ja');
-      }
-      if (sortBy === 'name') {
-        return aName.localeCompare(bName, 'ja');
-      }
+      if (sortBy === 'cost') return aCost - bCost || aName.localeCompare(bName, 'ja');
+      if (sortBy === 'name') return aName.localeCompare(bName, 'ja');
       return 0;
     });
   }, [displayItems, sortBy]);
@@ -70,54 +96,36 @@ export default function SupplyDisplay({ initialCards }: { initialCards: CardType
       return newSet;
     });
   };
-
   const handleReplaceWithPlaceholder = () => {
     if (selectedIds.size === 0) return;
     setDisplayItems(prevItems =>
-      prevItems.map(item => {
-        if (selectedIds.has(item.id)) {
-          return { id: crypto.randomUUID(), type: 'placeholder' };
-        }
-        return item;
-      })
+      prevItems.map(item => (selectedIds.has(item.id) ? { id: crypto.randomUUID(), type: 'placeholder' } : item))
     );
     setSelectedIds(new Set());
   };
-
   const handleRerollSelected = async () => {
     if (selectedIds.size === 0) return;
     setIsRerolling(true);
     setError(null);
+    const selectedExpansionsArray = Array.from(selectedExpansions);
+    if (selectedExpansionsArray.length === 0) {
+      setError("再抽選に使用する拡張セットを少なくとも1つ選択してください。");
+      setIsRerolling(false);
+      return;
+    }
     try {
       const currentCardIds = displayItems.filter(isCard).map(c => c.id);
-      const { data: availableCards, error: fetchError } = await supabase
-        .from('cards')
-        .select('id')
-        .not('id', 'in', `(${currentCardIds.join(',') || '""'})`);
-
+      const { data: availableCards, error: fetchError } = await supabase.from('cards').select('id').in('expansion', selectedExpansionsArray).not('id', 'in', `(${currentCardIds.join(',') || '""'})`);
       if (fetchError) throw new Error(fetchError.message);
-      if (!availableCards || availableCards.length < selectedIds.size) {
-        throw new Error('再抽選するためのカードが不足しています。');
-      }
-
+      if (!availableCards || availableCards.length < selectedIds.size) throw new Error('選択された拡張セットに、再抽選するためのカードが不足しています。');
       const newCardIds = shuffle(availableCards).slice(0, selectedIds.size).map(c => c.id);
-      const { data: newFullCards, error: newCardsError } = await supabase
-        .from('cards')
-        .select('*')
-        .in('id', newCardIds);
+      const { data: newFullCards, error: newCardsError } = await supabase.from('cards').select('*').in('id', newCardIds);
       if (newCardsError || !newFullCards) throw new Error(newCardsError?.message || 'カード取得失敗');
-
       const newCardsQueue = [...newFullCards];
-      const newDisplayItems = displayItems.map(item => {
-          if (selectedIds.has(item.id)) {
-              return newCardsQueue.shift()!;
-          }
-          return item;
-      });
+      const newDisplayItems = displayItems.map(item => (selectedIds.has(item.id) ? newCardsQueue.shift()! : item));
       setDisplayItems(newDisplayItems);
       setNewlyAddedCardIds(new Set(newFullCards.map(c => c.id)));
       setSelectedIds(new Set());
-
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -126,66 +134,58 @@ export default function SupplyDisplay({ initialCards }: { initialCards: CardType
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">生成されたサプライ</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">王国カード ({displayItems.filter(isCard).length}種類)</p>
-          </div>
-          <div className="flex items-center space-x-2 mt-4 sm:mt-0">
-             <CopyUrlButton />
-             <Link href="/" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
-                新しく生成
-             </Link>
-          </div>
-      </div>
-      
-      <div className="my-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="font-bold mr-3">並び替え:</span>
-          <button onClick={() => setSortBy('cost')} className={`px-3 py-1 rounded ${sortBy === 'cost' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>コスト</button>
-          <button onClick={() => setSortBy('name')} className={`ml-2 px-3 py-1 rounded ${sortBy === 'name' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>名前</button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleRerollSelected}
-            disabled={selectedIds.size === 0 || isRerolling}
-            className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-          >
-            {isRerolling && <LoadingSpinner />}
-            選択枠を再抽選
-          </button>
-          <button 
-            onClick={handleReplaceWithPlaceholder}
-            disabled={selectedIds.size === 0 || displayItems.filter(item => selectedIds.has(item.id) && isCard(item)).length === 0}
-            className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            選択カードを空き枠に
-          </button>
-        </div>
-      </div>
-      {error && <p className="mt-2 text-center text-red-500">{error}</p>}
+    <div className="bg-gray-100 dark:bg-gray-900 min-h-screen">
+      <button
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        className="fixed top-4 left-4 z-50 p-2 rounded-full bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm shadow-lg hover:scale-110 transition-transform"
+        aria-label="メニューを開閉"
+      >
+        {isSidebarOpen ? <XMarkIcon className="h-6 w-6" /> : <Bars3Icon className="h-6 w-6" />}
+      </button>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-        {sortedItems.map((item) => (
-          isCard(item) ? (
-            <CardComponent
-              key={item.id}
-              card={item}
-              isSelected={selectedIds.has(item.id)}
-              onToggleSelect={handleToggleSelect}
-              isNew={newlyAddedCardIds.has(item.id)}
-            />
-          ) : (
-            <PlaceholderCard
-              key={item.id}
-              placeholder={item}
-              isSelected={selectedIds.has(item.id)}
-              onToggleSelect={handleToggleSelect}
-            />
-          )
-        ))}
+      {/* サイドバーオーバーレイ */}
+      <div className={`fixed inset-0 z-30 transition-opacity duration-300 ${isSidebarOpen ? 'bg-black/40' : 'bg-transparent pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
+      
+      {/* サイドバー本体 */}
+      <div className={`fixed inset-y-0 left-0 z-40 w-4/5 bg-gray-50 dark:bg-gray-800 transform transition-transform duration-300 ease-in-out shadow-2xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar 
+          allCards={allCards}
+          allExpansions={allExpansions}
+          selectedExpansions={selectedExpansions}
+          onExpansionChange={handleExpansionChange}
+        />
       </div>
+
+      {/* メインコンテンツ */}
+      <main className="flex-1 transition-all duration-300 ease-in-out">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+          {/* ヘッダー */}
+          <div className="flex justify-between items-center mb-2 pt-14">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">生成されたサプライ</h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">王国カード ({displayItems.filter(isCard).length}種類)</p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <CopyUrlButton />
+              <Link href="/" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                  新しく生成
+              </Link>
+            </div>
+          </div>
+
+          {/* 操作パネル */}
+          <div className="my-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow flex flex-wrap items-center justify-between gap-4">
+            <div><span className="font-bold mr-3">並び替え:</span><button onClick={() => setSortBy('cost')} className={`px-3 py-1 rounded ${sortBy === 'cost' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>コスト</button><button onClick={() => setSortBy('name')} className={`ml-2 px-3 py-1 rounded ${sortBy === 'name' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>名前</button></div>
+            <div className="flex items-center gap-2"><button onClick={handleRerollSelected} disabled={selectedIds.size === 0 || isRerolling} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center">{isRerolling && <LoadingSpinner />}選択枠を再抽選</button><button onClick={handleReplaceWithPlaceholder} disabled={selectedIds.size === 0 || displayItems.filter(item => selectedIds.has(item.id) && isCard(item)).length === 0} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed">選択カードを空き枠に</button></div>
+          </div>
+          {error && <p className="mt-2 text-center text-red-500">{error}</p>}
+          
+          {/* カードグリッド */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+            {sortedItems.map((item) => isCard(item) ? (<CardComponent key={item.id} card={item} isSelected={selectedIds.has(item.id)} onToggleSelect={handleToggleSelect} isNew={newlyAddedCardIds.has(item.id)}/>) : (<PlaceholderCard key={item.id} placeholder={item} isSelected={selectedIds.has(item.id)} onToggleSelect={handleToggleSelect}/>))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
