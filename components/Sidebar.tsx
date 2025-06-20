@@ -1,6 +1,4 @@
-// --- FILE: components/Sidebar.tsx (最終更新版) ---
-// このファイルは `components` ディレクトリに配置してください。
-// `Card.tsx` コンポーネントも同じ `components` ディレクトリに配置する必要があります。
+// --- FILE: components/Sidebar.tsx (並び替え機能を追加) ---
 'use client';
 
 import { Card as CardType } from '../types';
@@ -10,7 +8,7 @@ import CardComponent from './Card';
 
 type SidebarProps = {
   allCards: CardType[];
-  allExpansions: string[];
+  allExpansions: string[]; // ★ 親からソート済みの配列を受け取る
   selectedExpansions: Set<string>;
   onExpansionChange: (expansionName: string) => void;
 };
@@ -21,7 +19,6 @@ export default function Sidebar({
   selectedExpansions,
   onExpansionChange,
 }: SidebarProps) {
-  // 全カードから拡張セットごとにグループ化
   const groupedCards = allCards.reduce((acc, card) => {
     (acc[card.expansion] = acc[card.expansion] || []).push(card);
     return acc;
@@ -33,7 +30,6 @@ export default function Sidebar({
         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">サプライ情報・設定</h2>
         
         <div className="w-full mx-auto rounded-2xl bg-white dark:bg-gray-900 p-2 space-y-2">
-          {/* 拡張セット選択アコーディオン */}
           <Disclosure>
             {({ open }) => (
               <>
@@ -42,6 +38,7 @@ export default function Sidebar({
                   <ChevronUpIcon className={`${open ? 'rotate-180 transform' : ''} h-5 w-5 text-indigo-500 transition-transform`} />
                 </Disclosure.Button>
                 <Disclosure.Panel className="px-4 pt-4 pb-2 text-sm text-gray-500 dark:text-gray-300 space-y-3">
+                  {/* ★ 親から渡されたソート済みのallExpansionsをそのまま使う */}
                   {allExpansions.map(exp => (
                     <label key={exp} className="flex items-center space-x-3 cursor-pointer group">
                       <div className="relative flex items-center">
@@ -56,7 +53,6 @@ export default function Sidebar({
             )}
           </Disclosure>
           
-          {/* 全カード一覧アコーディオン */}
           <Disclosure>
             {({ open }) => (
               <>
@@ -66,25 +62,30 @@ export default function Sidebar({
                 </Disclosure.Button>
                 <Transition show={open} enter="transition duration-100 ease-out" enterFrom="transform scale-95 opacity-0" enterTo="transform scale-100 opacity-100" leave="transition duration-75 ease-out" leaveFrom="transform scale-100 opacity-100" leaveTo="transform scale-95 opacity-0">
                   <Disclosure.Panel className="p-2 text-sm text-gray-500 dark:text-gray-400 space-y-2">
-                    {Object.keys(groupedCards).map(expansion => (
-                      <Disclosure key={expansion} as="div" className="mt-2">
-                        {({ open: expansionOpen }) => (
-                           <>
-                            <Disclosure.Button className="flex w-full justify-between rounded-lg bg-gray-100 dark:bg-gray-700/50 px-3 py-2 text-left text-xs font-medium text-gray-900 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600/50 focus:outline-none focus-visible:ring focus-visible:ring-gray-500/75">
-                              <span>{expansion} ({groupedCards[expansion].length}枚)</span>
-                              <ChevronUpIcon className={`${expansionOpen ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
-                            </Disclosure.Button>
-                            <Disclosure.Panel className="pt-2 pb-2">
-                               <div className="grid grid-cols-3 gap-2">
-                                {groupedCards[expansion].map(card => (
-                                  <CardComponent key={card.id} card={card} />
-                                ))}
-                              </div>
-                            </Disclosure.Panel>
-                          </>
-                        )}
-                      </Disclosure>
-                    ))}
+                    {/* ★ 親から渡されたソート済みのallExpansionsを使ってループさせる */}
+                    {allExpansions.map(expansion => {
+                      const cardsInExpansion = groupedCards[expansion];
+                      if (!cardsInExpansion) return null;
+                      return (
+                        <Disclosure key={expansion} as="div" className="mt-2">
+                          {({ open: expansionOpen }) => (
+                            <>
+                              <Disclosure.Button className="flex w-full justify-between rounded-lg bg-gray-100 dark:bg-gray-700/50 px-3 py-2 text-left text-xs font-medium text-gray-900 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600/50 focus:outline-none focus-visible:ring focus-visible:ring-gray-500/75">
+                                <span>{expansion} ({cardsInExpansion.length}枚)</span>
+                                <ChevronUpIcon className={`${expansionOpen ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
+                              </Disclosure.Button>
+                              <Disclosure.Panel className="pt-2 pb-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                  {cardsInExpansion.map(card => (
+                                    <CardComponent key={card.id} card={card} />
+                                  ))}
+                                </div>
+                              </Disclosure.Panel>
+                            </>
+                          )}
+                        </Disclosure>
+                      );
+                    })}
                   </Disclosure.Panel>
                 </Transition>
               </>
