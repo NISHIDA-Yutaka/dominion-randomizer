@@ -1,4 +1,6 @@
-// --- FILE: components/Sidebar.tsx (並び替え機能を追加) ---
+// --- FILE: components/Sidebar.tsx (UI微調整版) ---
+// このファイルは `components` ディレクトリに配置してください。
+// `Card.tsx` コンポーネントも同じ `components` ディレクトリに配置する必要があります。
 'use client';
 
 import { Card as CardType } from '../types';
@@ -8,7 +10,7 @@ import CardComponent from './Card';
 
 type SidebarProps = {
   allCards: CardType[];
-  allExpansions: string[]; // ★ 親からソート済みの配列を受け取る
+  allExpansions: string[];
   selectedExpansions: Set<string>;
   onExpansionChange: (expansionName: string) => void;
 };
@@ -26,10 +28,12 @@ export default function Sidebar({
 
   return (
     <aside className="h-full w-full bg-gray-50 dark:bg-gray-800 p-4 overflow-y-auto">
-      <div className="pt-16 md:pt-4">
+      {/* ヘッダーボタンとの重なりを避けるためのスペースを調整 */}
+      <div className="pt-16 md:pt-6">
         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">サプライ情報・設定</h2>
         
         <div className="w-full mx-auto rounded-2xl bg-white dark:bg-gray-900 p-2 space-y-2">
+          {/* 拡張セット選択アコーディオン */}
           <Disclosure>
             {({ open }) => (
               <>
@@ -38,7 +42,6 @@ export default function Sidebar({
                   <ChevronUpIcon className={`${open ? 'rotate-180 transform' : ''} h-5 w-5 text-indigo-500 transition-transform`} />
                 </Disclosure.Button>
                 <Disclosure.Panel className="px-4 pt-4 pb-2 text-sm text-gray-500 dark:text-gray-300 space-y-3">
-                  {/* ★ 親から渡されたソート済みのallExpansionsをそのまま使う */}
                   {allExpansions.map(exp => (
                     <label key={exp} className="flex items-center space-x-3 cursor-pointer group">
                       <div className="relative flex items-center">
@@ -53,6 +56,7 @@ export default function Sidebar({
             )}
           </Disclosure>
           
+          {/* 全カード一覧アコーディオン */}
           <Disclosure>
             {({ open }) => (
               <>
@@ -62,7 +66,6 @@ export default function Sidebar({
                 </Disclosure.Button>
                 <Transition show={open} enter="transition duration-100 ease-out" enterFrom="transform scale-95 opacity-0" enterTo="transform scale-100 opacity-100" leave="transition duration-75 ease-out" leaveFrom="transform scale-100 opacity-100" leaveTo="transform scale-95 opacity-0">
                   <Disclosure.Panel className="p-2 text-sm text-gray-500 dark:text-gray-400 space-y-2">
-                    {/* ★ 親から渡されたソート済みのallExpansionsを使ってループさせる */}
                     {allExpansions.map(expansion => {
                       const cardsInExpansion = groupedCards[expansion];
                       if (!cardsInExpansion) return null;
@@ -75,10 +78,8 @@ export default function Sidebar({
                                 <ChevronUpIcon className={`${expansionOpen ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
                               </Disclosure.Button>
                               <Disclosure.Panel className="pt-2 pb-2">
-                                <div className="grid grid-cols-5 gap-2">
-                                  {cardsInExpansion.map(card => (
-                                    <CardComponent key={card.id} card={card} />
-                                  ))}
+                                <div className="grid grid-cols-3 gap-2">
+                                  {cardsInExpansion.map(card => (<CardComponent key={card.id} card={card} />))}
                                 </div>
                               </Disclosure.Panel>
                             </>
