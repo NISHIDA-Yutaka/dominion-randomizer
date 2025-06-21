@@ -5,4 +5,16 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // `Database` ジェネリクスで型付けされたクライアントを作成
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+    // vvv ここから追加 vvv
+    {
+        realtime: {
+            params: {
+                eventsPerSecond: 10,
+            },
+        },
+    }
+    // ^^^ ここまで追加 ^^^
+);
