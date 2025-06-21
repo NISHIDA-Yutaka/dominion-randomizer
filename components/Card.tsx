@@ -1,4 +1,4 @@
-// --- FILE: components/Card.tsx (UI微調整版) ---
+// --- FILE: components/Card.tsx (Next.js 14対応版) ---
 import Image from 'next/image';
 import { Card } from '../types';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
@@ -18,12 +18,13 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
         onClick={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
     >
         <div className="aspect-[5/7] relative">
+            {/* ★ 修正点: Next.js 14 の Image コンポーネントの書き方に修正 */}
             <Image
                 src={card.image || 'https://placehold.co/200x280/e2e8f0/cbd5e0?text=No+Image'}
                 alt={card.name}
-                layout="fill"
-                objectFit="cover"
-                className="group-hover:scale-105 transition-transform duration-300"
+                fill
+                sizes="(max-width: 640px) 50vw, 300px"
+                className="object-cover group-hover:scale-105 transition-transform duration-300"
                 unoptimized
             />
             {onToggleSelect && isSelected && (
@@ -34,7 +35,7 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
             <h3 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate" title={card.name}>
                 {card.name}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{card.expansion}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-1">{card.expansion}</p>
             <div className="flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <CurrencyDollarIcon className="w-5 h-5 text-yellow-500" />
                 <span className="ml-1 font-semibold text-lg">{card.cost}</span>

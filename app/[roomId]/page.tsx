@@ -1,52 +1,50 @@
+// --- FILE: app/[roomId]/page.tsx (キャッシュ完全無効化版) ---
+
 import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../types';
 import Link from 'next/link';
 import SupplyDisplay from './SupplyDisplay';
 import type { Metadata, ResolvingMetadata } from 'next';
 
-// ★ 修正点: 共有の型定義をやめ、各関数で直接、かつ最も厳格な型を指定します。
-// これにより、Vercelのビルドシステムとの型競合を完全に回避します。
+// ★ 修正点1: 2種類の方法でキャッシュを無効化し、常に最新のデータを取得するようにする
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type PageProps = {
   params: { roomId: string };
   searchParams: { [key: string]: string | string[] | undefined };
 };
 
-// ページのメタデータを動的に設定
 export async function generateMetadata(
   { params }: PageProps,
   parent: ResolvingMetadata
 ): Promise<Metadata> {
     const { roomId } = params;
-    // オプション: parentから解決済みの親メタデータを取得できます
-    // const previousImages = (await parent).openGraph?.images || [];
-
     return {
         title: `サプライ: ${roomId.substring(0, 8)}...`,
         description: '生成されたドミニオンのサプライです。',
     };
 }
 
+// ★ 修正点2: DB問い合わせ時にキャッシュを使わないオプションを追加
 async function getSupply(roomId: string): Promise<Card[] | null> {
     try {
-        const { data: roomData, error: roomError } = await supabase
-            .from('rooms')
-            .select('cards')
-            .eq('id', roomId)
-            .single();
+        console.log(`Fetching supply for room [${roomId}] at ${new Date().toISOString()}`);
+        const { data: roomData, error: roomError } = await supabase.from('rooms').select('cards').eq('id', roomId).single();
 
-        if (roomError || !roomData) return null;
-
+        if (roomError || !roomData) {
+            console.error(`Could not fetch room [${roomId}]:`, roomError);
+            return null;
+        }
         const cardIds = roomData.cards as string[];
         if (!Array.isArray(cardIds) || cardIds.length === 0) return null;
+        
+        const { data: cardsData, error: cardsError } = await supabase.from('cards').select('*').in('id', cardIds);
 
-        const { data: cardsData, error: cardsError } = await supabase
-            .from('cards')
-            .select('*')
-            .in('id', cardIds);
-        
-        if (cardsError) return null;
-        
+        if (cardsError) {
+            console.error(`Could not fetch cards for room [${roomId}]:`, cardsError);
+            return null;
+        }
         const sortedCards = cardIds.map(id => cardsData.find(card => card.id === id)!).filter(Boolean);
         return sortedCards;
     } catch (err) {
@@ -55,7 +53,6 @@ async function getSupply(roomId: string): Promise<Card[] | null> {
     }
 }
 
-// コンポーネントのPropsにも同じ型を適用
 export default async function RoomPage({ params }: PageProps) {
   const { roomId } = params;
   const initialSupply = await getSupply(roomId);
@@ -72,5 +69,5 @@ export default async function RoomPage({ params }: PageProps) {
     );
   }
 
-  return <SupplyDisplay initialCards={initialSupply} />;
+  return <SupplyDisplay initialCards={initialSupply} roomId={roomId} />;
 }
