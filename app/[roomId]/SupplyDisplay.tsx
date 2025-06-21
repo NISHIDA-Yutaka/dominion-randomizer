@@ -49,13 +49,13 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
 
   const handleReplaceWithPlaceholder = async () => {
     if (selectedIds.size === 0) return;
-    const newDisplayItems = displayItems.map(item => (selectedIds.has(item.id) ? { id: crypto.randomUUID(), type: 'placeholder' } : item));
+    //       ↓ ここに型注釈を追加
+    const newDisplayItems = displayItems.map((item): DisplayItem => (selectedIds.has(item.id) ? { id: crypto.randomUUID(), type: 'placeholder' } : item));
     const newSupplyCardIds = newDisplayItems.filter(isCard).map(card => card.id);
     
     try {
       const { error: updateError } = await supabase.from('rooms').update({ cards: newSupplyCardIds }).eq('id', roomId);
       if (updateError) {
-        // ★ エラーオブジェクト全体をコンソールに出力
         console.error("Supabase update error (delete):", updateError);
         throw new Error(updateError.message);
       }
