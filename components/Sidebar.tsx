@@ -1,6 +1,3 @@
-// --- FILE: components/Sidebar.tsx (UI微調整版) ---
-// このファイルは `components` ディレクトリに配置してください。
-// `Card.tsx` コンポーネントも同じ `components` ディレクトリに配置する必要があります。
 'use client';
 
 import { Card as CardType } from '../types';
@@ -13,6 +10,9 @@ type SidebarProps = {
   allExpansions: string[];
   selectedExpansions: Set<string>;
   onExpansionChange: (expansionName: string) => void;
+  onCardAdd: (cardId: string) => void;
+  // ★ 変更点1: サプライ内のカードIDセットを受け取るプロパティを追加
+  supplyCardIds: Set<string>;
 };
 
 export default function Sidebar({
@@ -20,6 +20,8 @@ export default function Sidebar({
   allExpansions,
   selectedExpansions,
   onExpansionChange,
+  onCardAdd,
+  supplyCardIds, // ★ 変更点2: propsから受け取る
 }: SidebarProps) {
   const groupedCards = allCards.reduce((acc, card) => {
     (acc[card.expansion] = acc[card.expansion] || []).push(card);
@@ -28,10 +30,9 @@ export default function Sidebar({
 
   return (
     <aside className="h-full w-full bg-gray-50 dark:bg-gray-800 p-4 overflow-y-auto">
-      {/* ヘッダーボタンとの重なりを避けるためのスペースを調整 */}
       <div className="pt-16 md:pt-6">
         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">サプライ情報・設定</h2>
-        
+
         <div className="w-full mx-auto rounded-2xl bg-white dark:bg-gray-900 p-2 space-y-2">
           {/* 拡張セット選択アコーディオン */}
           <Disclosure>
@@ -55,7 +56,7 @@ export default function Sidebar({
               </>
             )}
           </Disclosure>
-          
+
           {/* 全カード一覧アコーディオン */}
           <Disclosure>
             {({ open }) => (
@@ -64,7 +65,15 @@ export default function Sidebar({
                   <span>全カード一覧 ({allCards.length}枚)</span>
                   <ChevronUpIcon className={`${open ? 'rotate-180 transform' : ''} h-5 w-5 text-indigo-500 transition-transform`} />
                 </Disclosure.Button>
-                <Transition show={open} enter="transition duration-100 ease-out" enterFrom="transform scale-95 opacity-0" enterTo="transform scale-100 opacity-100" leave="transition duration-75 ease-out" leaveFrom="transform scale-100 opacity-100" leaveTo="transform scale-95 opacity-0">
+                <Transition
+                  show={open}
+                  enter="transition duration-100 ease-out"
+                  enterFrom="transform scale-95 opacity-0"
+                  enterTo="transform scale-100 opacity-100"
+                  leave="transition duration-75 ease-out"
+                  leaveFrom="transform scale-100 opacity-100"
+                  leaveTo="transform scale-95 opacity-0"
+                >
                   <Disclosure.Panel className="p-2 text-sm text-gray-500 dark:text-gray-400 space-y-2">
                     {allExpansions.map(expansion => {
                       const cardsInExpansion = groupedCards[expansion];
@@ -78,8 +87,21 @@ export default function Sidebar({
                                 <ChevronUpIcon className={`${expansionOpen ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
                               </Disclosure.Button>
                               <Disclosure.Panel className="pt-2 pb-2">
-                                <div className="grid grid-cols-3 gap-2">
-                                  {cardsInExpansion.map(card => (<CardComponent key={card.id} card={card} />))}
+                                {/* ★ 変更点3: grid-cols-4に変更 */}
+                                <div className="grid grid-cols-4 gap-2">
+                                  {cardsInExpansion.map(card => {
+                                    // ★ 変更点4: カードがサプライに含まれているかチェック
+                                    const isCardInSupply = supplyCardIds.has(card.id);
+                                    return (
+                                      <CardComponent
+                                        key={card.id}
+                                        card={card}
+                                        // ★ 変更点5: 含まれている場合は選択済みのスタイルを適用し、クリックできないようにする
+                                        isSelected={isCardInSupply}
+                                        onToggleSelect={isCardInSupply ? undefined : onCardAdd}
+                                      />
+                                    );
+                                  })}
                                 </div>
                               </Disclosure.Panel>
                             </>
