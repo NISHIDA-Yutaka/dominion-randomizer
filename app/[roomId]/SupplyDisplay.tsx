@@ -14,6 +14,9 @@ import Sidebar from '../../components/Sidebar';
 import { Bars3Icon, XMarkIcon, ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { EXPANSION_ORDER } from '../../lib/constants';
 
+import { Disclosure, Transition } from '@headlessui/react';
+import { ChevronUpIcon } from '@heroicons/react/20/solid';
+
 type Placeholder = { id: string; type: 'placeholder' };
 type DisplayItem = CardType | Placeholder;
 type SortKey = 'cost' | 'expansion';
@@ -21,6 +24,16 @@ const isCard = (item: DisplayItem): item is CardType => 'cost' in item;
 function shuffle<T>(array: T[]): T[] { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; }
 
 const channelManager: { [roomId: string]: RealtimeChannel } = {};
+
+type SupplyConstraints = {
+  includeDraw: boolean;
+  includeAction: boolean;
+  includeBuy: boolean;
+  includeTrash: boolean;
+  includeGain: boolean;
+  attackSetting: 'mixed' | 'forbidden';
+  reactionSetting: 'mixed' | 'required' | 'forbidden';
+};
 
 export default function SupplyDisplay({ initialCards, roomId }: { initialCards: CardType[], roomId: string }) {
   const [cards, setCards] = useState<CardType[]>(initialCards);
@@ -36,6 +49,43 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   const [allExpansions, setAllExpansions] = useState<string[]>([]);
   const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
   const [allCards, setAllCards] = useState<CardType[]>([]);
+
+  // --- ここから追加 ---
+  // 条件のUIの状態を管理する
+  const [constraints, setConstraints] = useState<SupplyConstraints>({
+    includeDraw: false,
+    includeAction: false,
+    includeBuy: false,
+    includeTrash: false,
+    includeGain: false,
+    attackSetting: 'mixed',
+    reactionSetting: 'mixed',
+  });
+
+  // チェックボックスの状態を更新するハンドラ
+  const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
+    setConstraints(prev => ({ ...prev, [key]: value }));
+  };
+  
+  // ボタントグルの状態を更新するハンドラ
+  const handleToggleSetting = (
+    key: 'attackSetting' | 'reactionSetting',
+    value: 'required' | 'forbidden'
+  ) => {
+    setConstraints(prev => ({
+      ...prev,
+      // @ts-ignore
+      [key]: prev[key] === value ? 'mixed' : value,
+    }));
+  };
+  
+  // アタックとリアクション設定の連動
+  useEffect(() => {
+    if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
+      setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
+    }
+  }, [constraints.attackSetting]);
+  // --- ここまで追加 ---
 
   const cardsRef = useRef(cards);
   useEffect(() => {
@@ -240,6 +290,80 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
               </button>
             </div>
           </div>
+
+          {/* 再抽選の条件指定UI */}
+          <div className="my-4 w-full bg-white dark:bg-gray-800 rounded-lg shadow">
+            <Disclosure>
+              {({ open }) => (
+                <>
+                  <Disclosure.Button className="flex w-full justify-between rounded-lg bg-gray-100 dark:bg-gray-700/50 px-4 py-3 text-left font-medium text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600/50 focus:outline-none focus-visible:ring focus-visible:ring-indigo-500/75">
+                    <span>再抽選の条件指定</span>
+                    <ChevronUpIcon className={`${open ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500 transition-transform`} />
+                  </Disclosure.Button>
+                  <Transition
+                    show={open}
+                    enter="transition duration-100 ease-out"
+                    enterFrom="transform -translate-y-2 opacity-0"
+                    enterTo="transform translate-y-0 opacity-100"
+                    leave="transition duration-75 ease-out"
+                    leaveFrom="transform translate-y-0 opacity-100"
+                    leaveTo="transform -translate-y-2 opacity-0"
+                  >
+                    <Disclosure.Panel className="p-4 text-sm text-gray-600 dark:text-gray-300">
+                      <div className="space-y-4 text-left">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeDraw} onChange={(e) => handleConstraintChange('includeDraw', e.target.checked)} />
+                                <span className={constraints.includeDraw ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>+2ドローを含める</span>
+                            </label>
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeAction} onChange={(e) => handleConstraintChange('includeAction', e.target.checked)} />
+                                <span className={constraints.includeAction ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>+2アクションを含める</span>
+                            </label>
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeBuy} onChange={(e) => handleConstraintChange('includeBuy', e.target.checked)} />
+                                <span className={constraints.includeBuy ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>+購入を含める</span>
+                            </label>
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeTrash} onChange={(e) => handleConstraintChange('includeTrash', e.target.checked)} />
+                                <span className={constraints.includeTrash ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>廃棄を含める</span>
+                            </label>
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeGain} onChange={(e) => handleConstraintChange('includeGain', e.target.checked)} />
+                                <span className={constraints.includeGain ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>獲得を含める</span>
+                            </label>
+                        </div>
+                        <hr className="border-gray-200 dark:border-gray-700" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                          <div>
+                            <label className="font-semibold block mb-2 text-gray-800 dark:text-gray-200">アタックカード</label>
+                            <div className="flex space-x-2">
+                              <button onClick={() => handleToggleSetting('attackSetting', 'forbidden')} className={`cursor-pointer px-3 py-1 rounded-md text-sm font-semibold ${constraints.attackSetting === 'forbidden' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                必ず含めない
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="font-semibold block mb-2 text-gray-800 dark:text-gray-200">リアクションカード</label>
+                            <div className="flex space-x-2">
+                              <button onClick={() => handleToggleSetting('reactionSetting', 'required')} disabled={constraints.attackSetting === 'forbidden'} className={`cursor-pointer px-3 py-1 rounded-md text-sm font-semibold ${constraints.reactionSetting === 'required' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'} disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed`}>
+                                アタック対策に含める
+                              </button>
+                              <button onClick={() => handleToggleSetting('reactionSetting', 'forbidden')} className={`cursor-pointer px-3 py-1 rounded-md text-sm font-semibold ${constraints.reactionSetting === 'forbidden' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                必ず含めない
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Disclosure.Panel>
+                  </Transition>
+                </>
+              )}
+            </Disclosure>
+          </div>
+          {/* --- ここまで追加 --- */}
+          
           {error && <p className="mt-2 text-center text-red-500 font-bold">{error}</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
             {sortedItems.map((item) =>
