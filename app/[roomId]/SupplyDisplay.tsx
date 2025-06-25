@@ -8,7 +8,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import CardComponent from '../../components/Card';
 import PlaceholderCard from '../../components/PlaceholderCard';
 import { CopyUrlButton } from '../../components/CopyUrlButton';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabase/client';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import Sidebar from '../../components/Sidebar';
 import { Bars3Icon, XMarkIcon, ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline';
