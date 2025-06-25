@@ -1,9 +1,8 @@
-// --- FILE: app/[roomId]/SupplyDisplay.tsx (条件引き継ぎ対応版) ---
+// --- FILE: app/[roomId]/SupplyDisplay.tsx (再抽選ロジック実装版) ---
 'use client';
 
-// ★★★ 1. import文にusePersistentStateを追加 ★★★
 import { useState, useMemo, useEffect, useRef } from 'react';
-import usePersistentState from '../../hooks/usePersistentState'; // 追加
+import usePersistentState from '../../hooks/usePersistentState';
 import Link from 'next/link';
 import { Card as CardType, Room } from '../../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -37,7 +36,16 @@ type SupplyConstraints = {
   reactionSetting: 'mixed' | 'required' | 'forbidden';
 };
 
-export default function SupplyDisplay({ initialCards, roomId }: { initialCards: CardType[], roomId: string }) {
+// ★★★ この定数はトップページから持ってきました ★★★
+const CONSTRAINT_TAG_MAP = {
+    includeDraw: 'ドロー',
+    includeAction: 'アクション',
+    includeBuy: '購入権',
+    includeTrash: '廃棄',
+    includeGain: '獲得',
+};
+
+export default function SupplyDisplay({ initialCards, roomId }: { initialCards: CardType[], roomId:string }) {
   const [cards, setCards] = useState<CardType[]>(initialCards);
   const [placeholders, setPlaceholders] = useState<Placeholder[]>(
     Array.from({ length: Math.max(0, 10 - initialCards.length) }, () => ({ id: crypto.randomUUID(), type: 'placeholder' }))
@@ -49,11 +57,13 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   const [newlyAddedCardIds, setNewlyAddedCardIds] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [allExpansions, setAllExpansions] = useState<string[]>([]);
-  const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
   const [allCards, setAllCards] = useState<CardType[]>([]);
+  
+  // ★★★ usePersistentStateをサイドバーの拡張セット選択にも適用 ★★★
+  const [selectedExpansions, setSelectedExpansions] = usePersistentState<string[]>('dominion-reroll-expansions', []);
+  const selectedExpansionsSet = useMemo(() => new Set(selectedExpansions), [selectedExpansions]);
 
-  // ★★★ 2. useStateをusePersistentStateに置き換え ★★★
-  // トップページとキーを合わせることで、設定が共有されます。
+
   const [constraints, setConstraints] = usePersistentState<SupplyConstraints>('dominion-constraints', {
     includeDraw: false,
     includeAction: false,
@@ -63,14 +73,11 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     attackSetting: 'mixed',
     reactionSetting: 'mixed',
   });
-  // ★★★ 変更点はここまで ★★★
 
-  // チェックボックスの状態を更新するハンドラ
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
     setConstraints(prev => ({ ...prev, [key]: value }));
   };
   
-  // ボタントグルの状態を更新するハンドラ
   const handleToggleSetting = (
     key: 'attackSetting' | 'reactionSetting',
     value: 'required' | 'forbidden'
@@ -82,12 +89,11 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     }));
   };
   
-  // アタックとリアクション設定の連動
   useEffect(() => {
     if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
       setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
     }
-  }, [constraints.attackSetting, constraints.reactionSetting, setConstraints]);
+  }, [constraints, setConstraints]);
 
   const cardsRef = useRef(cards);
   useEffect(() => {
@@ -98,13 +104,11 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
 
   useEffect(() => {
     if (!channelManager[roomId]) {
-      console.log(`[Realtime] Channel for room ${roomId} does not exist. Creating and subscribing...`);
       const channel = supabase.channel(`room-${roomId}`);
       channel.on<Room>(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
         async (payload) => {
-          console.log('[Realtime] Change received!', payload);
           const newCardIds = payload.new.cards as string[];
           if (!newCardIds) return;
           const currentCardIds = cardsRef.current.map(c => c.id);
@@ -113,71 +117,70 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
             setNewlyAddedCardIds(new Set(addedIds));
           }
           const { data, error } = await supabase.from('cards').select('*').in('id', newCardIds);
-          if (error) {
-            console.error('[Realtime] Error fetching new cards:', error);
-            return;
-          }
+          if (error) { console.error(error); return; }
           const sortedNewCards = newCardIds.map(id => data.find(c => c.id === id)!).filter(Boolean);
           setCards(sortedNewCards);
           setPlaceholders(Array.from({ length: Math.max(0, 10 - sortedNewCards.length) }, () => ({ id: crypto.randomUUID(), type: 'placeholder' })));
         }
-      ).subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`[Realtime] Successfully SUBSCRIBED to room: ${roomId}`);
-        }
-        if (status === 'CHANNEL_ERROR') {
-          console.error(`[Realtime] Subscription error for room ${roomId}:`, err);
-          setError('リアルタイム接続に失敗しました。');
-        }
-      });
+      ).subscribe();
       channelManager[roomId] = channel;
-    } else {
-      console.log(`[Realtime] Channel for room ${roomId} already exists. Using existing channel.`);
     }
   }, [roomId]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: expansionData } = await supabase.from('cards').select('expansion');
-      if (expansionData) { const uniqueExpansions = [...new Set(expansionData.map(c => c.expansion))]; uniqueExpansions.sort((a, b) => { const indexA = EXPANSION_ORDER.indexOf(a); const indexB = EXPANSION_ORDER.indexOf(b); if (indexA === -1) return 1; if (indexB === -1) return -1; return indexA - indexB; }); setAllExpansions(uniqueExpansions); const currentExps = new Set(initialCards.map(c => c.expansion)); setSelectedExpansions(currentExps); }
+      if (expansionData) { 
+        const uniqueExpansions = [...new Set(expansionData.map(c => c.expansion))]; 
+        uniqueExpansions.sort((a, b) => { const indexA = EXPANSION_ORDER.indexOf(a); const indexB = EXPANSION_ORDER.indexOf(b); if (indexA === -1) return 1; if (indexB === -1) return -1; return indexA - indexB; }); 
+        setAllExpansions(uniqueExpansions); 
+        // 初期選択の拡張セットを現在のサプライのものに設定
+        if(selectedExpansions.length === 0) {
+           const currentExps = new Set(initialCards.map(c => c.expansion));
+           setSelectedExpansions(Array.from(currentExps));
+        }
+      }
       const { data: allCardsData } = await supabase.from('cards').select('*').order('cost').order('name');
       if (allCardsData) { setAllCards(allCardsData); }
     };
     fetchInitialData();
-  }, [initialCards]);
+  }, [initialCards, selectedExpansions.length, setSelectedExpansions]);
 
   useEffect(() => { if (newlyAddedCardIds.size > 0) { const timer = setTimeout(() => setNewlyAddedCardIds(new Set()), 2500); return () => clearTimeout(timer); } }, [newlyAddedCardIds]);
 
   const supplyCardIds = useMemo(() => new Set(cards.map(c => c.id)), [cards]);
   const displayItems = useMemo<DisplayItem[]>(() => [...cards, ...placeholders], [cards, placeholders]);
-
+  
   const sortedItems = useMemo(() => {
     return [...displayItems].sort((a, b) => {
       const aIsCard = isCard(a);
       const bIsCard = isCard(b);
-
       if (aIsCard && !bIsCard) return -1;
       if (!aIsCard && bIsCard) return 1;
       if (!aIsCard && !bIsCard) return 0;
-
       const cardA = a as CardType;
       const cardB = b as CardType;
-
       if (sortBy === 'expansion') {
         const indexA = EXPANSION_ORDER.indexOf(cardA.expansion);
         const indexB = EXPANSION_ORDER.indexOf(cardB.expansion);
         const expansionCompare = (indexA === -1 ? Infinity : indexA) - (indexB === -1 ? Infinity : indexB);
         if (expansionCompare !== 0) return expansionCompare;
       }
-
       const costCompare = cardA.cost - cardB.cost;
       if (costCompare !== 0) return costCompare;
-
       return cardA.name.localeCompare(cardB.name, 'ja');
     });
   }, [displayItems, sortBy]);
 
-  const handleExpansionChange = (expansionName: string) => { setSelectedExpansions(prev => { const newSet = new Set(prev); if (newSet.has(expansionName)) newSet.delete(expansionName); else newSet.add(expansionName); return newSet; }); };
+  const handleExpansionChange = (expansionName: string) => { 
+    const newSet = new Set(selectedExpansions);
+    if (newSet.has(expansionName)) {
+      newSet.delete(expansionName);
+    } else {
+      newSet.add(expansionName);
+    }
+    setSelectedExpansions(Array.from(newSet));
+  };
   const handleToggleSelect = (id: string) => { setSelectedIds(prev => { const newSet = new Set(prev); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); return newSet; }); };
   const handleToggleSelectAll = () => {
     if (areAllCardsSelected) {
@@ -200,33 +203,106 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     }
   };
 
+  // ★★★ ここからが修正対象の関数です ★★★
   const handleRerollSelected = async () => {
     if (selectedIds.size === 0) return;
     setIsRerolling(true);
     setError(null);
-    const selectedExpansionsArray = Array.from(selectedExpansions);
-    if (selectedExpansionsArray.length === 0) { setError("再抽選に使用する拡張セットを少なくとも1つ選択してください。"); setIsRerolling(false); return; }
+
     try {
+      // Step 1: カード候補をDBから取得
+      if (selectedExpansions.length === 0) {
+        throw new Error('再抽選に使用する拡張セットを少なくとも1つ選択してください。');
+      }
       const rerollCount = selectedIds.size;
-      const currentCardIds = cards.map(c => c.id).filter(id => !selectedIds.has(id));
-      const { data: availableCards, error: fetchError } = await supabase.from('cards').select('id').in('expansion', selectedExpansionsArray).not('id', 'in', `(${currentCardIds.join(',') || '""'})`);
-      if (fetchError) throw new Error(fetchError.message);
-      if (!availableCards || availableCards.length < rerollCount) throw new Error('選択された拡張セットに、再抽選するためのカードが不足しています。');
-      const newCardIdsToAdd = shuffle(availableCards).slice(0, rerollCount).map(c => c.id);
-      const newTotalCardIds = [...currentCardIds, ...newCardIdsToAdd];
+      const keptCards = cards.filter(c => !selectedIds.has(c.id));
+      const keptCardIds = keptCards.map(c => c.id);
+
+      let query = supabase.from('cards').select('*').in('expansion', selectedExpansions).not('id', 'in', `(${[...keptCardIds, ...Array.from(selectedIds)].join(',') || '""'})`);
+      if (constraints.attackSetting === 'forbidden') query = query.not('type', 'cs', '{アタック}');
+      if (constraints.reactionSetting === 'forbidden') query = query.not('type', 'cs', '{リアクション}');
+
+      const { data: availableCards, error: fetchError } = await query;
+      if (fetchError) throw fetchError;
+      if (!availableCards) throw new Error('カードの取得に失敗しました。');
+
+      let newCards: CardType[] | null = null;
+      const MAX_RETRIES = 20;
+
+      // Step 2: 条件を満たす組み合わせが見つかるまでリトライ
+      for (let i = 0; i < MAX_RETRIES; i++) {
+        let candidatePool = [...availableCards];
+        let mandatoryCardsForReroll: CardType[] = [];
+        let newCardsInProgress: CardType[] = [];
+
+        // Step 2a: 現在のサプライで満たされていない必須条件を特定し、その分のカードを確保
+        for (const [key, tag] of Object.entries(CONSTRAINT_TAG_MAP)) {
+          const constraintKey = key as keyof typeof CONSTRAINT_TAG_MAP;
+          if (constraints[constraintKey] && !keptCards.some(c => c.tags?.includes(tag))) {
+            const matchingCards = candidatePool.filter(c => c.tags?.includes(tag));
+            if (matchingCards.length === 0) {
+              throw new Error(`「${tag}」を持つカードが、再抽選の候補に見つかりませんでした。`);
+            }
+            const chosenCard = shuffle(matchingCards)[0];
+            mandatoryCardsForReroll.push(chosenCard);
+            candidatePool = candidatePool.filter(c => c.id !== chosenCard.id);
+          }
+        }
+
+        newCardsInProgress.push(...mandatoryCardsForReroll);
+
+        // Step 2b: 残りの枠を埋める
+        const remainingSlots = rerollCount - newCardsInProgress.length;
+        if (candidatePool.length < remainingSlots) continue;
+        
+        newCardsInProgress.push(...shuffle(candidatePool).slice(0, remainingSlots));
+        if (newCardsInProgress.length < rerollCount) continue;
+        
+        // Step 3: 「アタック対策」ルールを検証
+        const newSupply = [...keptCards, ...newCardsInProgress];
+        const hasAttack = newSupply.some(c => c.type.includes('アタック'));
+        const hasReaction = newSupply.some(c => c.type.includes('リアクション'));
+        
+        if (!(constraints.reactionSetting === 'required' && hasAttack && !hasReaction)) {
+            newCards = newCardsInProgress;
+            break; 
+        }
+
+        // Step 4: ルール違反なので「修正」を試みる
+        const expendableNewCards = newCardsInProgress.filter(c => !mandatoryCardsForReroll.find(mc => mc.id === c.id));
+        const availableReactions = availableCards.filter(c => c.type.includes('リアクション') && !newCardsInProgress.find(sc => sc.id === c.id));
+
+        if (expendableNewCards.length > 0 && availableReactions.length > 0) {
+            const cardToRemove = expendableNewCards[0];
+            const cardToAdd = availableReactions[0];
+            const correctedNewCards = newCardsInProgress.filter(c => c.id !== cardToRemove.id);
+            correctedNewCards.push(cardToAdd);
+            newCards = correctedNewCards;
+            break;
+        }
+      }
+
+      if (!newCards || newCards.length < rerollCount) {
+        throw new Error('条件を満たす組み合わせが見つかりませんでした。');
+      }
+
+      // Step 5: サプライを更新
+      const newTotalCardIds = [...keptCardIds, ...newCards.map(c => c.id)];
       const { error: updateError } = await supabase.from('rooms').update({ cards: newTotalCardIds }).eq('id', roomId);
       if (updateError) throw new Error(updateError.message);
+
       setSelectedIds(new Set());
+
     } catch (err: any) {
       setError(`再抽選失敗: ${err.message}`);
     } finally {
       setIsRerolling(false);
     }
   };
+  // ★★★ ここまでが修正対象の関数です ★★★
 
   const handleAddCard = async (cardId: string) => {
     if (cardsRef.current.some(card => card.id === cardId)) {
-      console.log(`Card ${cardId} is already in the supply.`);
       return;
     }
     const newCardIds = [...cardsRef.current.map(c => c.id), cardId];
@@ -236,7 +312,6 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     }
   };
 
-    // (return以下のJSXは変更なし)
     return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen">
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="fixed top-4 left-4 z-50 p-2 rounded-full bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm shadow-lg hover:scale-110 transition-transform" aria-label="メニューを開閉"><div className="relative h-6 w-6"><XMarkIcon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0'}`} /><Bars3Icon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-0' : 'opacity-100'}`} /></div></button>
@@ -245,7 +320,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
         <Sidebar
           allCards={allCards}
           allExpansions={allExpansions}
-          selectedExpansions={selectedExpansions}
+          selectedExpansions={selectedExpansionsSet}
           onExpansionChange={handleExpansionChange}
           onCardAdd={handleAddCard}
           supplyCardIds={supplyCardIds}
