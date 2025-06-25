@@ -1,7 +1,9 @@
-// --- FILE: app/[roomId]/SupplyDisplay.tsx (空き枠を末尾にソートする修正版) ---
+// --- FILE: app/[roomId]/SupplyDisplay.tsx (条件引き継ぎ対応版) ---
 'use client';
 
+// ★★★ 1. import文にusePersistentStateを追加 ★★★
 import { useState, useMemo, useEffect, useRef } from 'react';
+import usePersistentState from '../../hooks/usePersistentState'; // 追加
 import Link from 'next/link';
 import { Card as CardType, Room } from '../../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -50,9 +52,9 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
   const [allCards, setAllCards] = useState<CardType[]>([]);
 
-  // --- ここから追加 ---
-  // 条件のUIの状態を管理する
-  const [constraints, setConstraints] = useState<SupplyConstraints>({
+  // ★★★ 2. useStateをusePersistentStateに置き換え ★★★
+  // トップページとキーを合わせることで、設定が共有されます。
+  const [constraints, setConstraints] = usePersistentState<SupplyConstraints>('dominion-constraints', {
     includeDraw: false,
     includeAction: false,
     includeBuy: false,
@@ -61,6 +63,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     attackSetting: 'mixed',
     reactionSetting: 'mixed',
   });
+  // ★★★ 変更点はここまで ★★★
 
   // チェックボックスの状態を更新するハンドラ
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
@@ -84,8 +87,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
       setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
     }
-  }, [constraints.attackSetting]);
-  // --- ここまで追加 ---
+  }, [constraints.attackSetting, constraints.reactionSetting, setConstraints]);
 
   const cardsRef = useRef(cards);
   useEffect(() => {
@@ -149,35 +151,28 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   const supplyCardIds = useMemo(() => new Set(cards.map(c => c.id)), [cards]);
   const displayItems = useMemo<DisplayItem[]>(() => [...cards, ...placeholders], [cards, placeholders]);
 
-  // ★ 変更点: sortedItemsのソートロジックを修正
   const sortedItems = useMemo(() => {
     return [...displayItems].sort((a, b) => {
       const aIsCard = isCard(a);
       const bIsCard = isCard(b);
 
-      // 1. 最優先: 空き枠（Placeholder）は常に末尾に配置する
-      if (aIsCard && !bIsCard) return -1; // a(カード)が先
-      if (!aIsCard && bIsCard) return 1;  // b(カード)が先
-      if (!aIsCard && !bIsCard) return 0; // 両方空き枠なら順序は問わない
+      if (aIsCard && !bIsCard) return -1;
+      if (!aIsCard && bIsCard) return 1;
+      if (!aIsCard && !bIsCard) return 0;
 
-      // 2. 両方ともカードの場合、選択されたソート順を適用
-      // (型安全のため、ここでaとbをCardTypeとして扱う)
       const cardA = a as CardType;
       const cardB = b as CardType;
 
       if (sortBy === 'expansion') {
         const indexA = EXPANSION_ORDER.indexOf(cardA.expansion);
         const indexB = EXPANSION_ORDER.indexOf(cardB.expansion);
-        // indexOfで見つからない場合は末尾に
         const expansionCompare = (indexA === -1 ? Infinity : indexA) - (indexB === -1 ? Infinity : indexB);
         if (expansionCompare !== 0) return expansionCompare;
       }
 
-      // コスト順、または拡張が同じ場合の第二ソート順
       const costCompare = cardA.cost - cardB.cost;
       if (costCompare !== 0) return costCompare;
 
-      // コストも同じ場合は名前順
       return cardA.name.localeCompare(cardB.name, 'ja');
     });
   }, [displayItems, sortBy]);
@@ -241,7 +236,8 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     }
   };
 
-  return (
+    // (return以下のJSXは変更なし)
+    return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen">
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="fixed top-4 left-4 z-50 p-2 rounded-full bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm shadow-lg hover:scale-110 transition-transform" aria-label="メニューを開閉"><div className="relative h-6 w-6"><XMarkIcon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0'}`} /><Bars3Icon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-0' : 'opacity-100'}`} /></div></button>
       <div className={`fixed inset-0 z-30 transition-opacity duration-300 ${isSidebarOpen ? 'bg-black/40' : 'bg-transparent pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
@@ -291,7 +287,6 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
             </div>
           </div>
 
-          {/* 再抽選の条件指定UI */}
           <div className="my-4 w-full bg-white dark:bg-gray-800 rounded-lg shadow">
             <Disclosure>
               {({ open }) => (
@@ -362,7 +357,6 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
               )}
             </Disclosure>
           </div>
-          {/* --- ここまで追加 --- */}
           
           {error && <p className="mt-2 text-center text-red-500 font-bold">{error}</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">

@@ -1,9 +1,9 @@
-// --- FILE: app/page.tsx (インポートパスを修正) ---
+// --- FILE: app/page.tsx (サプライ生成ロジック修正版) ---
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client'; // ★★★ インポートパスを修正 ★★★
+import { supabase } from '@/lib/supabase/client';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { EXPANSION_ORDER } from '@/lib/constants';
 import usePersistentState from '@/hooks/usePersistentState';
@@ -19,6 +19,7 @@ type SupplyConstraints = {
   reactionSetting: 'mixed' | 'required' | 'forbidden';
 };
 
+// カードの配列をシャッフルするヘルパー関数
 function shuffle<T>(array: T[]): T[] {
   const newArray = [...array];
   for (let i = newArray.length - 1; i > 0; i--) {
@@ -27,6 +28,15 @@ function shuffle<T>(array: T[]): T[] {
   }
   return newArray;
 }
+
+// カードの特性とDBのタグ名をマッピング
+const CONSTRAINT_TAG_MAP = {
+    includeDraw: 'ドロー',
+    includeAction: 'アクション', //  DBのtag名に合わせてください (例: '+2アクション')
+    includeBuy: '購入権',        //  DBのtag名に合わせてください (例: '+1購入')
+    includeTrash: '廃棄',
+    includeGain: '獲得',
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -49,10 +59,11 @@ export default function HomePage() {
     reactionSetting: 'mixed',
   });
 
+  // (handleConstraintChange, handleToggleSetting, useEffectなどの既存の関数は変更なし)
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
     setConstraints(prev => ({ ...prev, [key]: value }));
   };
-  
+
   const handleToggleSetting = (
     key: 'attackSetting' | 'reactionSetting',
     value: 'required' | 'forbidden'
@@ -63,12 +74,12 @@ export default function HomePage() {
       [key]: prev[key] === value ? 'mixed' : value,
     }));
   };
-  
+
   useEffect(() => {
     if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
       setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
     }
-  }, [constraints.attackSetting]);
+  }, [constraints, setConstraints]);
 
 
   useEffect(() => {
@@ -116,34 +127,77 @@ export default function HomePage() {
     }
   };
 
+
+  // ★★★ ここからが修正対象の関数です ★★★
   const handleGenerateSupply = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-        const selectedExpansionsArray = Array.from(selectedExpansions);
-        if (selectedExpansionsArray.length === 0) {
-            throw new Error('少なくとも1つの拡張セットを選択してください。');
+      const selectedExpansionsArray = Array.from(selectedExpansions);
+      if (selectedExpansionsArray.length === 0) {
+        throw new Error('少なくとも1つの拡張セットを選択してください。');
+      }
+
+      // Step 1: 基本的な条件でカード候補をDBから取得
+      let query = supabase.from('cards').select('*').in('expansion', selectedExpansionsArray);
+
+      if (constraints.attackSetting === 'forbidden') {
+        query = query.not('type', 'cs', '{アタック}');
+      }
+      if (constraints.reactionSetting === 'forbidden') {
+        query = query.not('type', 'cs', '{リアクション}');
+      }
+      // 注意: 「アタック対策に含める(required)」は複雑なため、このロジックでは未実装です。
+
+      const { data: availableCards, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+      if (!availableCards) throw new Error('カードの取得に失敗しました。');
+
+      // --- ここからクライアントサイドでの選出ロジック ---
+      let finalCardIds = new Set<string>();
+      let candidatePool = [...availableCards];
+
+      // Step 2: "必ず含める" 条件のカードを選出
+      for (const [key, tag] of Object.entries(CONSTRAINT_TAG_MAP)) {
+        if (constraints[key as keyof typeof CONSTRAINT_TAG_MAP]) {
+          const matchingCards = candidatePool.filter(card => card.tags?.includes(tag) && !finalCardIds.has(card.id));
+          if (matchingCards.length === 0) {
+            throw new Error(`「${tag}」を持つカードが、選択された拡張セット内に見つかりませんでした。`);
+          }
+          const randomCard = shuffle(matchingCards)[0];
+          finalCardIds.add(randomCard.id);
+          // 選出したカードを候補から削除
+          candidatePool = candidatePool.filter(card => card.id !== randomCard.id);
         }
-
-        const { data: cardIds, error: fetchError } = await supabase
-            .from('cards')
-            .select('id')
-            .in('expansion', selectedExpansionsArray);
-        
-        if (fetchError) throw fetchError;
-        if (!cardIds || cardIds.length < 10) {
-            throw new Error('カードが10枚未満です。拡張セットや条件を見直してください。');
+      }
+      
+      // Step 3: 残りのカードをランダムに選出
+      const remainingSlots = 10 - finalCardIds.size;
+      if (remainingSlots > 0) {
+        if (candidatePool.length < remainingSlots) {
+            throw new Error('条件を満たすカードが10枚に満たないため、サプライを生成できません。拡張セットや条件を見直してください。');
         }
+        const remainingCards = shuffle(candidatePool).slice(0, remainingSlots);
+        remainingCards.forEach(card => finalCardIds.add(card.id));
+      }
 
-        const shuffledCards = shuffle(cardIds);
-        const selectedCardIds = shuffledCards.slice(0, 10).map(c => c.id);
+      if (finalCardIds.size < 10) {
+          throw new Error('不明なエラーにより、10枚のカードを選出できませんでした。');
+      }
 
-        const { data: newRoom, error: insertError } = await supabase.from('rooms').insert({ cards: selectedCardIds }).select('id').single();
-        if (insertError) throw insertError;
-        if (!newRoom) throw new Error('サプライの作成に失敗しました。');
-        
-        router.push(`/${newRoom.id}`);
+      // Step 4: サプライをDBに登録して画面遷移
+      const { data: newRoom, error: insertError } = await supabase
+        .from('rooms')
+        .insert({ cards: Array.from(finalCardIds) })
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+      if (!newRoom) throw new Error('サプライの作成に失敗しました。');
+
+      router.push(`/${newRoom.id}`);
 
     } catch (err: any) {
       console.error('Error generating supply:', err);
@@ -151,7 +205,10 @@ export default function HomePage() {
       setIsLoading(false);
     }
   };
+  // ★★★ ここまでが修正対象の関数です ★★★
 
+
+  // (return以下のJSXは変更なし)
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
       <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-gray-900 dark:text-white">

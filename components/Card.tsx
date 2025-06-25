@@ -1,4 +1,4 @@
-// --- FILE: components/Card.tsx (Next.js 14対応版) ---
+// --- FILE: components/Card.tsx (デバッグ情報表示対応版) ---
 import Image from 'next/image';
 import { Card } from '../types';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
@@ -18,7 +18,6 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
         onClick={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
     >
         <div className="aspect-[5/7] relative">
-            {/* ★ 修正点: Next.js 14 の Image コンポーネントの書き方に修正 */}
             <Image
                 src={card.image || 'https://placehold.co/200x280/e2e8f0/cbd5e0?text=No+Image'}
                 alt={card.name}
@@ -35,11 +34,28 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
             <h3 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate" title={card.name}>
                 {card.name}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-1">{card.expansion}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-1">{card.expansion}</p>
             <div className="flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <CurrencyDollarIcon className="w-5 h-5 text-yellow-500" />
                 <span className="ml-1 font-semibold text-lg">{card.cost}</span>
             </div>
+
+            {/* ★★★ ここから追加 ★★★ */}
+            {/* 1. カードの「種類(type)」を表示 */}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {card.type.join(' - ')}
+            </p>
+            {/* 2. カードの「タグ(tags)」をデバッグ用に表示 */}
+            {card.tags && card.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap justify-center items-center gap-1" aria-label="カードのタグ">
+                {card.tags.map(tag => (
+                  <span key={tag} className="px-1.5 py-0.5 text-[10px] font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 rounded-full">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* ★★★ ここまで追加 ★★★ */}
         </div>
     </div>
   );
