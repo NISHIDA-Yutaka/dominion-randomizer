@@ -1,13 +1,15 @@
-// --- FILE: app/[roomId]/page.tsx (dynamicの重複エラーを修正) ---
+// --- FILE: app/[roomId]/page.tsx (型インポートのエラーを修正) ---
 
 import { createClient } from '@supabase/supabase-js';
-import { Card, Database } from '../../types';
+// ★★★ ここからが修正箇所 ★★★
+import { Card } from '../../types';
+import type { Database } from '../../types/supabase'; // Database型を正しいファイルからインポート
+// ★★★ ここまでが修正箇所 ★★★
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import dynamicImport from 'next/dynamic'; // ★ 'dynamic'から'dynamicImport'に名前を変更
+import dynamicImport from 'next/dynamic';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 
-// ★ 変更した名前'dynamicImport'を使用
 const SupplyDisplay = dynamicImport(() => import('./SupplyDisplay'), {
   ssr: false,
   loading: () => (
@@ -17,7 +19,6 @@ const SupplyDisplay = dynamicImport(() => import('./SupplyDisplay'), {
   ),
 });
 
-// こちらのdynamicはそのままでOK
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -33,7 +34,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 async function getSupply(roomId: string): Promise<Card[] | null> {
-  // この関数内では、サーバー専用のクライアントをその場で生成して使用
   const supabase = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
