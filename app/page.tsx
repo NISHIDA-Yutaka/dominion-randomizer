@@ -1,11 +1,13 @@
-// --- FILE: app/page.tsx (並び替え機能を追加) ---
+// --- FILE: app/page.tsx (インポートパスを修正) ---
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabaseClient';
-import { LoadingSpinner } from '../components/LoadingSpinner';
-import { EXPANSION_ORDER } from '../lib/constants'; // ★ 並び順をインポート
+import { supabase } from '@/lib/supabase/client'; // ★★★ インポートパスを修正 ★★★
+import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { EXPANSION_ORDER } from '@/lib/constants';
+import usePersistentState from '@/hooks/usePersistentState';
+import { Card as CardType } from '@/types';
 
 type SupplyConstraints = {
   includeDraw: boolean;
@@ -17,7 +19,6 @@ type SupplyConstraints = {
   reactionSetting: 'mixed' | 'required' | 'forbidden';
 };
 
-// (shuffle function remains the same)
 function shuffle<T>(array: T[]): T[] {
   const newArray = [...array];
   for (let i = newArray.length - 1; i > 0; i--) {
@@ -27,18 +28,18 @@ function shuffle<T>(array: T[]): T[] {
   return newArray;
 }
 
-
 export default function HomePage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [expansions, setExpansions] = useState<string[]>([]);
-  const [selectedExpansions, setSelectedExpansions] = useState<Set<string>>(new Set());
   const [isLoadingExpansions, setIsLoadingExpansions] = useState(true);
 
-  // 条件のUIの状態を管理する
-  const [constraints, setConstraints] = useState<SupplyConstraints>({
+  const [selectedExpansionsArray, setSelectedExpansionsArray] = usePersistentState<string[]>('dominion-expansions-array', []);
+  const selectedExpansions = useMemo(() => new Set(selectedExpansionsArray), [selectedExpansionsArray]);
+
+  const [constraints, setConstraints] = usePersistentState<SupplyConstraints>('dominion-constraints', {
     includeDraw: false,
     includeAction: false,
     includeBuy: false,
@@ -48,12 +49,10 @@ export default function HomePage() {
     reactionSetting: 'mixed',
   });
 
-  // チェックボックスの状態を更新するハンドラ
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
     setConstraints(prev => ({ ...prev, [key]: value }));
   };
   
-  // ボタントグルの状態を更新するハンドラ
   const handleToggleSetting = (
     key: 'attackSetting' | 'reactionSetting',
     value: 'required' | 'forbidden'
@@ -65,77 +64,87 @@ export default function HomePage() {
     }));
   };
   
-  // アタックとリアクション設定の連動
   useEffect(() => {
     if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
       setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
     }
   }, [constraints.attackSetting]);
-  // --- ここまで追加 ---
+
 
   useEffect(() => {
     const fetchExpansions = async () => {
       setIsLoadingExpansions(true);
       const { data, error } = await supabase.from('cards').select('expansion');
-
       if (error) {
         console.error('Error fetching expansions:', error);
         setError('拡張セットの読み込みに失敗しました。');
       } else if (data) {
         const uniqueExpansions = [...new Set(data.map(c => c.expansion))];
-        
-        // ★ ここから変更: 定義した順序でソートする
         uniqueExpansions.sort((a, b) => {
           const indexA = EXPANSION_ORDER.indexOf(a);
           const indexB = EXPANSION_ORDER.indexOf(b);
-          // もし定義にない拡張セットがあれば末尾に回す
           if (indexA === -1) return 1;
           if (indexB === -1) return -1;
           return indexA - indexB;
         });
-        // ★ ここまで変更
-
         setExpansions(uniqueExpansions);
-        setSelectedExpansions(new Set(uniqueExpansions));
+        if (localStorage.getItem('dominion-expansions-array') === null) {
+          setSelectedExpansionsArray(uniqueExpansions);
+        }
       }
       setIsLoadingExpansions(false);
     };
-
     fetchExpansions();
-  }, []);
+  }, [setSelectedExpansionsArray]);
 
-  // (handleExpansionChange and handleGenerateSupply remain the same)
   const handleExpansionChange = (expansionName: string) => {
-    setSelectedExpansions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(expansionName)) {
-        newSet.delete(expansionName);
-      } else {
-        newSet.add(expansionName);
-      }
-      return newSet;
-    });
+    const newSet = new Set(selectedExpansionsArray);
+    if (newSet.has(expansionName)) {
+      newSet.delete(expansionName);
+    } else {
+      newSet.add(expansionName);
+    }
+    setSelectedExpansionsArray(Array.from(newSet));
+  };
+  
+  const areAllExpansionsSelected = expansions.length > 0 && selectedExpansions.size === expansions.length;
+  const handleToggleSelectAllExpansions = () => {
+    if (areAllExpansionsSelected) {
+      setSelectedExpansionsArray([]);
+    } else {
+      setSelectedExpansionsArray(expansions);
+    }
   };
 
   const handleGenerateSupply = async () => {
     setIsLoading(true);
     setError(null);
-    const selectedExpansionsArray = Array.from(selectedExpansions);
-    if (selectedExpansionsArray.length === 0) {
-      setError('少なくとも1つの拡張セットを選択してください。');
-      setIsLoading(false);
-      return;
-    }
+    
     try {
-      const { data: cardIds, error: fetchError } = await supabase.from('cards').select('id').in('expansion', selectedExpansionsArray);
-      if (fetchError) throw fetchError;
-      if (!cardIds || cardIds.length < 10) throw new Error('選択された拡張セットのカードが10枚未満です。');
-      const shuffledCards = shuffle(cardIds);
-      const selectedCardIds = shuffledCards.slice(0, 10).map(c => c.id);
-      const { data: newRoom, error: insertError } = await supabase.from('rooms').insert({ cards: selectedCardIds }).select('id').single();
-      if (insertError) throw insertError;
-      if (!newRoom) throw new Error('サプライの作成に失敗しました。');
-      router.push(`/${newRoom.id}`);
+        const selectedExpansionsArray = Array.from(selectedExpansions);
+        if (selectedExpansionsArray.length === 0) {
+            throw new Error('少なくとも1つの拡張セットを選択してください。');
+        }
+
+        const { data: cardIds, error: fetchError } = await supabase
+            .from('cards')
+            .select('id')
+            .in('expansion', selectedExpansionsArray);
+        
+        if (fetchError) throw fetchError;
+        if (!cardIds || cardIds.length < 10) {
+            throw new Error('カードが10枚未満です。拡張セットや条件を見直してください。');
+        }
+
+        const shuffledCards = shuffle(cardIds);
+        const selectedCardIds = shuffledCards.slice(0, 10).map(c => c.id);
+
+        const { data: newRoom, error: insertError } = await supabase.from('rooms').insert({ cards: selectedCardIds }).select('id').single();
+        if (insertError) throw insertError;
+        if (!newRoom) throw new Error('サプライの作成に失敗しました。');
+        
+        router.push(`/${newRoom.id}`);
+
     } catch (err: any) {
       console.error('Error generating supply:', err);
       setError(err.message || 'サプライの生成中にエラーが発生しました。');
@@ -143,21 +152,30 @@ export default function HomePage() {
     }
   };
 
-
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] text-center">
+    <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
       <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-gray-900 dark:text-white">
         ドミニオンサプライ生成
       </h1>
       <p className="text-lg md:text-xl mb-8 text-gray-600 dark:text-gray-300 max-w-2xl">
         使用する拡張セットを選択して、ランダムなサプライを生成しましょう。
       </p>
-      <div className="w-full max-w-2xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-        <h2 className="text-xl font-bold mb-4 text-left text-gray-900 dark:text-white">拡張セット選択</h2>
+
+      <div className="w-full max-w-3xl p-6 mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-left text-gray-900 dark:text-white">拡張セット選択</h2>
+            <button
+                onClick={handleToggleSelectAllExpansions}
+                className="cursor-pointer px-3 py-1 text-sm font-semibold text-indigo-600 dark:text-indigo-400 rounded-md hover:bg-indigo-50 dark:hover:bg-gray-700"
+                disabled={isLoadingExpansions}
+            >
+                {areAllExpansionsSelected ? 'すべて選択解除' : 'すべて選択'}
+            </button>
+        </div>
         {isLoadingExpansions ? (
           <div className="flex items-center justify-center text-gray-500"><LoadingSpinner /><span className="ml-2">読み込み中...</span></div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-left">
             {expansions.map(exp => (
               <label key={exp} className="flex items-center space-x-3 cursor-pointer">
                 <input type="checkbox" className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={selectedExpansions.has(exp)} onChange={() => handleExpansionChange(exp)} />
@@ -168,8 +186,7 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* 条件指定UIのJSX */}
-      <div className="w-full max-w-2xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      <div className="w-full max-w-3xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
           <h2 className="text-xl font-bold mb-4 text-left text-gray-900 dark:text-white">条件を指定して生成</h2>
           <div className="space-y-4 text-left">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -215,8 +232,7 @@ export default function HomePage() {
             </div>
           </div>
       </div>
-      {/* --- ここまで追加 --- */}
-      
+
       <button onClick={handleGenerateSupply} disabled={isLoading || isLoadingExpansions} className="flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all duration-300 text-xl">
         {isLoading ? (<><LoadingSpinner /><span>生成中...</span></>) : ('サプライを生成！')}
       </button>
