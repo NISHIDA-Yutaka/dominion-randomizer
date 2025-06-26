@@ -259,6 +259,7 @@ export default function HomePage() {
       <div className="w-full max-w-3xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
           <h2 className="text-xl font-bold mb-4 text-left text-gray-900 dark:text-white">条件を指定して生成</h2>
           <div className="space-y-4 text-left">
+            {/* ここが修正対象のブロックです */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <label className="flex items-center space-x-3 cursor-pointer">
                     <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeDraw} onChange={(e) => handleConstraintChange('includeDraw', e.target.checked)} />
