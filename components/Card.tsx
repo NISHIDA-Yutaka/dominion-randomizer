@@ -35,6 +35,11 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
             <h3 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate" title={card.name}>
                 {card.name}
             </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-1">{card.expansion}</p>
+            <div className="flex items-center justify-center text-gray-500 dark:text-gray-400">
+                <CurrencyDollarIcon className="w-5 h-5 text-yellow-500" />
+                <span className="ml-1 font-semibold text-lg">{card.cost}</span>
+            </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {card.type.join(' - ')}
             </p>
@@ -47,11 +52,6 @@ export default function CardComponent({ card, isSelected = false, onToggleSelect
                 ))}
               </div>
             )}
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-1">{card.expansion}</p>
-            <div className="flex items-center justify-center text-gray-500 dark:text-gray-400">
-                <CurrencyDollarIcon className="w-5 h-5 text-yellow-500" />
-                <span className="ml-1 font-semibold text-lg">{card.cost}</span>
-            </div>
         </div>
     </div>
   );
