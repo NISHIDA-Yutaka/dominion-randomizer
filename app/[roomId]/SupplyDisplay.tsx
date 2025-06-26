@@ -1,4 +1,4 @@
-// --- FILE: app/[roomId]/SupplyDisplay.tsx (再抽選ロジック実装版) ---
+// --- FILE: app/[roomId]/SupplyDisplay.tsx (判定ロジック切り替え・デバッグ表示版) ---
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -12,7 +12,7 @@ import { CopyUrlButton } from '../../components/CopyUrlButton';
 import { supabase } from '../../lib/supabase/client';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import Sidebar from '../../components/Sidebar';
-import { Bars3Icon, XMarkIcon, ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, ArrowPathIcon, TrashIcon, CheckBadgeIcon } from '@heroicons/react/24/outline';
 import { EXPANSION_ORDER } from '../../lib/constants';
 
 import { Disclosure, Transition } from '@headlessui/react';
@@ -36,7 +36,9 @@ type SupplyConstraints = {
   reactionSetting: 'mixed' | 'required' | 'forbidden';
 };
 
-// ★★★ この定数はトップページから持ってきました ★★★
+// ★★★ 1. 型定義をインポート元ファイルに合わせて修正（または定義）★★★
+type ColonyDeterminationLogic = 'weight' | 'prosperity';
+
 const CONSTRAINT_TAG_MAP = {
     includeDraw: 'ドロー',
     includeAction: 'アクション',
@@ -59,10 +61,14 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   const [allExpansions, setAllExpansions] = useState<string[]>([]);
   const [allCards, setAllCards] = useState<CardType[]>([]);
   
-  // ★★★ usePersistentStateをサイドバーの拡張セット選択にも適用 ★★★
   const [selectedExpansions, setSelectedExpansions] = usePersistentState<string[]>('dominion-reroll-expansions', []);
   const selectedExpansionsSet = useMemo(() => new Set(selectedExpansions), [selectedExpansions]);
 
+  const [isColonyGame, setIsColonyGame] = useState(false);
+  const [currentColonyWeight, setCurrentColonyWeight] = useState(0); // ★★★ 2. デバッグ用に重み合計を管理 ★★★
+  
+  // ★★★ 3. ホームページでの選択を読み込む ★★★
+  const [colonyLogic] = usePersistentState<ColonyDeterminationLogic>('dominion-colony-logic', 'weight');
 
   const [constraints, setConstraints] = usePersistentState<SupplyConstraints>('dominion-constraints', {
     includeDraw: false,
@@ -74,10 +80,37 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     reactionSetting: 'mixed',
   });
 
+  // ★★★ 4. 判定ロジックを選択された方法に切り替え ★★★
+  useEffect(() => {
+    if (cards.length === 0) return;
+
+    // デバッグ用の合計値を計算
+    const totalColonyWeight = cards.reduce((sum, card) => sum + (card.colony_weight || 0), 0);
+    setCurrentColonyWeight(totalColonyWeight);
+
+    let recommendation = false;
+    if (colonyLogic === 'weight') {
+      const COLONY_WEIGHT_THRESHOLD = 3;
+      if (totalColonyWeight >= COLONY_WEIGHT_THRESHOLD) {
+        recommendation = true;
+      }
+    } else if (colonyLogic === 'prosperity') {
+      const PROSPERITY_CARD_THRESHOLD = 3;
+      const prosperityCardCount = cards.filter(c => c.expansion === '繁栄').length;
+      if (prosperityCardCount >= PROSPERITY_CARD_THRESHOLD) {
+        recommendation = true;
+      }
+    }
+
+    setIsColonyGame(recommendation);
+
+  }, [cards, colonyLogic]); // colonyLogic も依存配列に追加
+
+  // (以降のロジックは変更なし)
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
     setConstraints(prev => ({ ...prev, [key]: value }));
   };
-  
+
   const handleToggleSetting = (
     key: 'attackSetting' | 'reactionSetting',
     value: 'required' | 'forbidden'
@@ -88,13 +121,13 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       [key]: prev[key] === value ? 'mixed' : value,
     }));
   };
-  
+
   useEffect(() => {
     if (constraints.attackSetting === 'forbidden' && constraints.reactionSetting === 'required') {
       setConstraints(prev => ({ ...prev, reactionSetting: 'mixed' }));
     }
   }, [constraints, setConstraints]);
-
+  
   const cardsRef = useRef(cards);
   useEffect(() => {
     cardsRef.current = cards;
@@ -130,14 +163,13 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: expansionData } = await supabase.from('cards').select('expansion');
-      if (expansionData) { 
-        const uniqueExpansions = [...new Set(expansionData.map(c => c.expansion))]; 
-        uniqueExpansions.sort((a, b) => { const indexA = EXPANSION_ORDER.indexOf(a); const indexB = EXPANSION_ORDER.indexOf(b); if (indexA === -1) return 1; if (indexB === -1) return -1; return indexA - indexB; }); 
-        setAllExpansions(uniqueExpansions); 
-        // 初期選択の拡張セットを現在のサプライのものに設定
-        if(selectedExpansions.length === 0) {
-           const currentExps = new Set(initialCards.map(c => c.expansion));
-           setSelectedExpansions(Array.from(currentExps));
+      if (expansionData) {
+        const uniqueExpansions = [...new Set(expansionData.map(c => c.expansion))];
+        uniqueExpansions.sort((a, b) => { const indexA = EXPANSION_ORDER.indexOf(a); const indexB = EXPANSION_ORDER.indexOf(b); if (indexA === -1) return 1; if (indexB === -1) return -1; return indexA - indexB; });
+        setAllExpansions(uniqueExpansions);
+        if (selectedExpansions.length === 0) {
+          const currentExps = new Set(initialCards.map(c => c.expansion));
+          setSelectedExpansions(Array.from(currentExps));
         }
       }
       const { data: allCardsData } = await supabase.from('cards').select('*').order('cost').order('name');
@@ -145,7 +177,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
     };
     fetchInitialData();
   }, [initialCards, selectedExpansions.length, setSelectedExpansions]);
-
+  
   useEffect(() => { if (newlyAddedCardIds.size > 0) { const timer = setTimeout(() => setNewlyAddedCardIds(new Set()), 2500); return () => clearTimeout(timer); } }, [newlyAddedCardIds]);
 
   const supplyCardIds = useMemo(() => new Set(cards.map(c => c.id)), [cards]);
@@ -171,8 +203,8 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       return cardA.name.localeCompare(cardB.name, 'ja');
     });
   }, [displayItems, sortBy]);
-
-  const handleExpansionChange = (expansionName: string) => { 
+  
+  const handleExpansionChange = (expansionName: string) => {
     const newSet = new Set(selectedExpansions);
     if (newSet.has(expansionName)) {
       newSet.delete(expansionName);
@@ -202,15 +234,13 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       setError(`削除失敗: ${err.message}`);
     }
   };
-
-  // ★★★ ここからが修正対象の関数です ★★★
+  
   const handleRerollSelected = async () => {
     if (selectedIds.size === 0) return;
     setIsRerolling(true);
     setError(null);
 
     try {
-      // Step 1: カード候補をDBから取得
       if (selectedExpansions.length === 0) {
         throw new Error('再抽選に使用する拡張セットを少なくとも1つ選択してください。');
       }
@@ -229,13 +259,11 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       let newCards: CardType[] | null = null;
       const MAX_RETRIES = 20;
 
-      // Step 2: 条件を満たす組み合わせが見つかるまでリトライ
       for (let i = 0; i < MAX_RETRIES; i++) {
         let candidatePool = [...availableCards];
         let mandatoryCardsForReroll: CardType[] = [];
         let newCardsInProgress: CardType[] = [];
 
-        // Step 2a: 現在のサプライで満たされていない必須条件を特定し、その分のカードを確保
         for (const [key, tag] of Object.entries(CONSTRAINT_TAG_MAP)) {
           const constraintKey = key as keyof typeof CONSTRAINT_TAG_MAP;
           if (constraints[constraintKey] && !keptCards.some(c => c.tags?.includes(tag))) {
@@ -251,34 +279,31 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
 
         newCardsInProgress.push(...mandatoryCardsForReroll);
 
-        // Step 2b: 残りの枠を埋める
         const remainingSlots = rerollCount - newCardsInProgress.length;
         if (candidatePool.length < remainingSlots) continue;
-        
+
         newCardsInProgress.push(...shuffle(candidatePool).slice(0, remainingSlots));
         if (newCardsInProgress.length < rerollCount) continue;
-        
-        // Step 3: 「アタック対策」ルールを検証
+
         const newSupply = [...keptCards, ...newCardsInProgress];
         const hasAttack = newSupply.some(c => c.type.includes('アタック'));
         const hasReaction = newSupply.some(c => c.type.includes('リアクション'));
-        
+
         if (!(constraints.reactionSetting === 'required' && hasAttack && !hasReaction)) {
-            newCards = newCardsInProgress;
-            break; 
+          newCards = newCardsInProgress;
+          break;
         }
 
-        // Step 4: ルール違反なので「修正」を試みる
         const expendableNewCards = newCardsInProgress.filter(c => !mandatoryCardsForReroll.find(mc => mc.id === c.id));
         const availableReactions = availableCards.filter(c => c.type.includes('リアクション') && !newCardsInProgress.find(sc => sc.id === c.id));
 
         if (expendableNewCards.length > 0 && availableReactions.length > 0) {
-            const cardToRemove = expendableNewCards[0];
-            const cardToAdd = availableReactions[0];
-            const correctedNewCards = newCardsInProgress.filter(c => c.id !== cardToRemove.id);
-            correctedNewCards.push(cardToAdd);
-            newCards = correctedNewCards;
-            break;
+          const cardToRemove = expendableNewCards[0];
+          const cardToAdd = availableReactions[0];
+          const correctedNewCards = newCardsInProgress.filter(c => c.id !== cardToRemove.id);
+          correctedNewCards.push(cardToAdd);
+          newCards = correctedNewCards;
+          break;
         }
       }
 
@@ -286,7 +311,6 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
         throw new Error('条件を満たす組み合わせが見つかりませんでした。');
       }
 
-      // Step 5: サプライを更新
       const newTotalCardIds = [...keptCardIds, ...newCards.map(c => c.id)];
       const { error: updateError } = await supabase.from('rooms').update({ cards: newTotalCardIds }).eq('id', roomId);
       if (updateError) throw new Error(updateError.message);
@@ -299,8 +323,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       setIsRerolling(false);
     }
   };
-  // ★★★ ここまでが修正対象の関数です ★★★
-
+  
   const handleAddCard = async (cardId: string) => {
     if (cardsRef.current.some(card => card.id === cardId)) {
       return;
@@ -311,8 +334,8 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
       setError(`カードの追加に失敗しました: ${error.message}`);
     }
   };
-
-    return (
+  
+  return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen">
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="fixed top-4 left-4 z-50 p-2 rounded-full bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm shadow-lg hover:scale-110 transition-transform" aria-label="メニューを開閉"><div className="relative h-6 w-6"><XMarkIcon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0'}`} /><Bars3Icon className={`h-6 w-6 absolute transition-opacity duration-300 ${isSidebarOpen ? 'opacity-0' : 'opacity-100'}`} /></div></button>
       <div className={`fixed inset-0 z-30 transition-opacity duration-300 ${isSidebarOpen ? 'bg-black/40' : 'bg-transparent pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
@@ -338,6 +361,20 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
               <Link href="/" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">新しく生成</Link>
             </div>
           </div>
+
+          {isColonyGame && (
+            <div className="my-4 p-3 bg-yellow-100 dark:bg-yellow-900/50 border-l-4 border-yellow-500 text-yellow-800 dark:text-yellow-200 rounded-r-lg flex items-center justify-between">
+              <div className='flex items-center'>
+                <CheckBadgeIcon className="h-6 w-6 mr-3 text-yellow-600 dark:text-yellow-400" />
+                <span className="font-semibold">白金貨・植民地場の使用を推奨します。</span>
+              </div>
+              {/* ★★★ 5. デバッグ用の合計値を表示 ★★★ */}
+              <span className='text-sm text-gray-600 dark:text-gray-400'>
+                (判定方式: {colonyLogic === 'weight' ? '重み合計' : '繁栄枚数'} / 現在の重み合計: {currentColonyWeight})
+              </span>
+            </div>
+          )}
+          
           <div className="my-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">
               <div className="flex items-center">
@@ -361,7 +398,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
               </button>
             </div>
           </div>
-
+          
           <div className="my-4 w-full bg-white dark:bg-gray-800 rounded-lg shadow">
             <Disclosure>
               {({ open }) => (

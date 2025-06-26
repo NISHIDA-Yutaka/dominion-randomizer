@@ -18,6 +18,7 @@ export interface Database {
           cost: number
           tags: string[] | null
           image: string | null
+          colony_weight: number
         }
         Insert: {
           id?: string
@@ -27,6 +28,7 @@ export interface Database {
           cost: number
           tags?: string[] | null
           image?: string | null
+          colony_weight?: number
         }
         Update: {
           id?: string
@@ -36,6 +38,7 @@ export interface Database {
           cost?: number
           tags?: string[] | null
           image?: string | null
+          colony_weight?: number
         }
       }
       rooms: {

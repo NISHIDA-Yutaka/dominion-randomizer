@@ -1,4 +1,4 @@
-// --- FILE: app/page.tsx (タグ更新・UI修正版) ---
+// --- FILE: app/page.tsx (植民地場判定ロジック選択UI追加版) ---
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -19,6 +19,9 @@ type SupplyConstraints = {
   reactionSetting: 'mixed' | 'required' | 'forbidden';
 };
 
+// ★★★ 1. 植民地場判定ロジックの型を定義 ★★★
+type ColonyDeterminationLogic = 'weight' | 'prosperity';
+
 function shuffle<T>(array: T[]): T[] {
   const newArray = [...array];
   for (let i = newArray.length - 1; i > 0; i--) {
@@ -28,7 +31,6 @@ function shuffle<T>(array: T[]): T[] {
   return newArray;
 }
 
-// ★★★ 1. CONSTRAINT_TAG_MAPの値を更新 ★★★
 const CONSTRAINT_TAG_MAP = {
     includeDraw: 'ドロー',
     includeAction: 'アクション',
@@ -57,6 +59,10 @@ export default function HomePage() {
     attackSetting: 'mixed',
     reactionSetting: 'mixed',
   });
+  
+  // ★★★ 2. 植民地場判定ロジックの選択状態を管理 ★★★
+  const [colonyLogic, setColonyLogic] = usePersistentState<ColonyDeterminationLogic>('dominion-colony-logic', 'weight');
+
 
   const handleConstraintChange = (key: keyof Omit<SupplyConstraints, 'attackSetting' | 'reactionSetting'>, value: boolean) => {
     setConstraints(prev => ({ ...prev, [key]: value }));
@@ -130,7 +136,6 @@ export default function HomePage() {
     setError(null);
 
     try {
-      // Step 1: カード候補をDBから取得
       const selectedExpansionsArray = Array.from(selectedExpansions);
       if (selectedExpansionsArray.length === 0) {
         throw new Error('少なくとも1つの拡張セットを選択してください。');
@@ -145,9 +150,8 @@ export default function HomePage() {
       if (!availableCards) throw new Error('カードの取得に失敗しました。');
 
       let finalSupply: CardType[] | null = null;
-      const MAX_RETRIES = 20;
+      const MAX_RETRIES = 20; 
 
-      // Step 2: 条件を満たす組み合わせが見つかるまでリトライ
       for (let i = 0; i < MAX_RETRIES; i++) {
         let candidatePool = [...availableCards];
         let mandatoryCards: CardType[] = [];
@@ -176,7 +180,6 @@ export default function HomePage() {
         supplyInProgress.push(...shuffle(candidatePool).slice(0, remainingSlots));
         if (supplyInProgress.length < 10) continue;
 
-        // Step 3: 「アタック対策」ルールを検証
         const hasAttack = supplyInProgress.some(c => c.type.includes('アタック'));
         const hasReaction = supplyInProgress.some(c => c.type.includes('リアクション'));
 
@@ -185,7 +188,6 @@ export default function HomePage() {
           break;
         }
 
-        // Step 4: ルール違反なので「修正」を試みる
         const expendableCards = supplyInProgress.filter(c => !mandatoryCards.find(mc => mc.id === c.id));
         const availableReactions = availableCards.filter(c => 
           c.type.includes('リアクション') && !supplyInProgress.find(sc => sc.id === c.id)
@@ -207,7 +209,6 @@ export default function HomePage() {
       
       const finalCardIds = finalSupply.map(c => c.id);
 
-      // Step 5: サプライをDBに登録
       const { data: newRoom, error: insertError } = await supabase.from('rooms').insert({ cards: finalCardIds }).select('id').single();
       if (insertError) throw insertError;
       if (!newRoom) throw new Error('サプライの作成に失敗しました。');
@@ -221,7 +222,6 @@ export default function HomePage() {
     }
   };
 
-  // ★★★ 2. ここのreturn文以下を置き換え ★★★
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
       <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-gray-900 dark:text-white">
@@ -259,7 +259,6 @@ export default function HomePage() {
       <div className="w-full max-w-3xl p-6 mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
           <h2 className="text-xl font-bold mb-4 text-left text-gray-900 dark:text-white">条件を指定して生成</h2>
           <div className="space-y-4 text-left">
-            {/* ここが修正対象のブロックです */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <label className="flex items-center space-x-3 cursor-pointer">
                     <input type="checkbox" className="h-5 w-5 rounded" checked={constraints.includeDraw} onChange={(e) => handleConstraintChange('includeDraw', e.target.checked)} />
@@ -301,6 +300,21 @@ export default function HomePage() {
                     </div>
                 </div>
             </div>
+
+            {/* ★★★ 3. 植民地場判定ロジックの選択UIを追加 ★★★ */}
+            <hr className="border-gray-200 dark:border-gray-700" />
+            <div>
+              <label className="font-semibold block mb-2">植民地場の判定方法</label>
+              <div className="flex space-x-2">
+                <button onClick={() => setColonyLogic('weight')} className={`cursor-pointer px-3 py-1 rounded-md text-sm font-semibold ${colonyLogic === 'weight' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                  カードの重み合計
+                </button>
+                <button onClick={() => setColonyLogic('prosperity')} className={`cursor-pointer px-3 py-1 rounded-md text-sm font-semibold ${colonyLogic === 'prosperity' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                  繁栄のカード枚数
+                </button>
+              </div>
+            </div>
+
           </div>
       </div>
 
