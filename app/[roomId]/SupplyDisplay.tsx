@@ -8,6 +8,7 @@ import { Card as CardType, Room } from '../../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import CardComponent from '../../components/Card';
 import PlaceholderCard from '../../components/PlaceholderCard';
+import { PostToDiscordButton } from '../../components/PostToDiscordButton';
 import { CopyUrlButton } from '../../components/CopyUrlButton';
 import { supabase } from '../../lib/supabase/client';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -357,6 +358,7 @@ export default function SupplyDisplay({ initialCards, roomId }: { initialCards: 
               <p className="text-gray-500 dark:text-gray-400 mt-1">王国カード ({cards.length}種類)</p>
             </div>
             <div className="flex items-center space-x-2">
+              <PostToDiscordButton />
               <CopyUrlButton />
               <Link href="/" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">新しく生成</Link>
             </div>
